@@ -31,7 +31,7 @@
 
 背景：开启防跨站跟踪时，Safari 会删掉 7 天无交互站点的 IndexedDB。主屏幕 Web App 与 Safari 的存储也是隔离的。目前代码没有调用 `navigator.storage.persist()`。
 
-- [ ] **P0.1 Web App Manifest + 图标**
+- [x] **P0.1 Web App Manifest + 图标**
   - 在 `public/` 下加 `manifest.webmanifest`，包含 name、short_name、`display: standalone`、theme_color 和 192/512 图标；`index.html` 引入 manifest，并加 `apple-touch-icon`。
   - 不做 Service Worker（离线缓存另议）。
   - 验收：Chrome DevTools 的 Application → Manifest 无报错；iOS 能“添加到主屏幕”，打开后没有地址栏。
@@ -268,4 +268,5 @@
 
 - P3.1（2026-11-06）：删掉 RecapView.vue builder-footer 里"视频成片 / MP4 下载待服务端媒体处理"的承诺，只保留"当前版本保存为图文回顾"。验证：npm test（79 项通过）、npm run check、npm run build 全通过；未改数据结构，旧备份导入不受影响。遗留：375/320px 宽度未做浏览器实测。
 - P1.1（2026-11-06）：EntryEditor 的「放进哪一类」改为由 `careFromTag` 驱动——手动新建记录选到喂奶/睡眠/换尿布/日常备注时生成对应 `CareObservation` 并展开数值字段，改回普通标签则撤销；编辑已有语音记录时保持原 care 不被覆盖。新增 `domain/care-types.ts` 的纯函数与 `tests/care-from-tag.test.ts`（5 项）：标签映射、未知标签、原话透传、"喂奶 90ml"校验通过且满足今日卡片计入条件并显示 90 ml、旧 workspace 仍通过 isWorkspace。79 项测试、类型检查、生产构建通过。遗留：375/320px 与 iOS 真机触控待浏览器实测。
+- P0.1（2026-11-06）：新增 `public/manifest.webmanifest`（name / short_name / display=standalone / theme_color / 192+512 PNG 图标），用与 `favicon.svg` 同配色（#eee5d9 / #73543c）的几何字母 b 生成 `public/icon-192.png`、`icon-512.png`，纯标准库写 PNG、未新增运行时依赖、未做 Service Worker；`index.html` 引入 manifest、apple-touch-icon 与 iOS 全屏相关 meta。验证：manifest JSON 可解析，build 产物含 manifest + 两个图标且 index.html 保留 5 处引用，图标经视觉检查可辨认，79 项测试 / 类型检查 / 构建通过。未改数据结构，旧备份导入不受影响。遗留：Chrome DevTools Application → Manifest 无报错、iOS"添加到主屏幕后无地址栏"待真机验证。
 
