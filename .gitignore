@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.deploy.env
+.DS_Store
+*.local
+.openai/.runtime/
+.workbuddy/
+coverage/
+# 内部任务跟踪留在本地，不进入仓库
+docs/TASKS.md

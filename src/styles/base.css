@@ -1,0 +1,200 @@
+:root {
+  color-scheme: light;
+  --font-xs: 11px; /* 全站最小字号，不要再写更小的值 */
+  --bg: #faf7f2;
+  --surface: #fffdf9;
+  --ink: #302d28;
+  --muted: #756d62;
+  --line: #e9e1d6;
+  --tint: #eee7dc;
+  --accent: #73543c;
+  --on-accent: #fffdf9;
+  --sage: #e9eee6;
+  --sage-ink: #456249;
+  --radius: 18px;
+  --danger: #a14d3b;
+  --danger: #a14d3b;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+button {
+  color: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+button,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid #a88769;
+  outline-offset: 3px;
+}
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+a {
+  color: var(--accent);
+}
+button svg {
+  flex-shrink: 0;
+}
+img,
+video {
+  max-width: 100%;
+}
+input,
+select,
+textarea {
+  min-width: 0;
+}
+/* iOS 的原生日期控件会忽略 width / min-width，把弹窗撑宽；去掉原生外观后按宽度排版。 */
+input[type="date"],
+input[type="datetime-local"] {
+  max-width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+}
+::selection {
+  background: #e1cdb7;
+  color: var(--ink);
+}
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+.eyebrow {
+  font-size: var(--font-xs);
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.page-heading {
+  font:
+    400 29px/1.45 Georgia,
+    "Songti SC",
+    "STSong",
+    serif;
+  letter-spacing: 0.4px;
+}
+.section-heading {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+.fine-print {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  text-align: center;
+  line-height: 1.8;
+  margin-top: 16px;
+}
+.form-error {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--danger);
+  background: #f8eae4;
+  padding: 11px 13px;
+  border-radius: 10px;
+}
+.danger-text {
+  color: var(--danger) !important;
+}
+.error-box {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--danger);
+  background: #f8eae4;
+  padding: 13px;
+  border-radius: 12px;
+}
+.full-width {
+  width: 100%;
+}
+.full-media {
+  width: 100%;
+  display: block;
+  max-height: 55dvh;
+  object-fit: contain;
+  background: var(--tint);
+  border-radius: 15px;
+}
+.empty-state {
+  text-align: center;
+  padding: 45px 18px;
+  color: var(--muted);
+}
+@media (prefers-reduced-motion: no-preference) {
+  button,
+  a {
+    transition:
+      background-color 0.17s,
+      color 0.17s,
+      opacity 0.17s;
+  }
+  dialog[open] {
+    animation: appear 0.18s ease-out;
+  }
+  @keyframes appear {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "babytime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "npm@11.19.0",
+  "scripts": {
+    "dev": "vite",
+    "check": "vue-tsc --noEmit",
+    "test": "node --test tests/*.test.ts",
+    "build": "vue-tsc --noEmit && vite build",
+    "deploy": "bash scripts/deploy.sh",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@lucide/vue": "1.68.0",
+    "vue": "3.5.44"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "@vitejs/plugin-vue": "6.0.10",
+    "typescript": "6.0.3",
+    "vite": "8.3.5",
+    "vue-tsc": "3.3.14"
+  }
+}
