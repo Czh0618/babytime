@@ -35,6 +35,10 @@ import {
   refreshAIStatus,
 } from "./lib/ai-service";
 import {
+  ensurePersistenceRequested,
+  initializePersistenceStatus,
+} from "./lib/persistence";
+import {
   CAPTION_SYSTEM_PROMPT,
   buildCaptionUserPrompt,
   parseAICaption,
@@ -135,6 +139,7 @@ async function perform(action: () => Promise<unknown>, success = "") {
   try {
     await action();
     if (success) say(success);
+    void ensurePersistenceRequested();
     return true;
   } catch (error) {
     const message =
@@ -228,6 +233,7 @@ async function importFiles(files: File[]) {
     if (result.count) {
       navigate("inbox");
       say(`已在本机保存 ${result.count} 个素材，等你来整理。`);
+      void ensurePersistenceRequested();
       if (!result.errors.length) overlay.value = null;
     }
   } catch (error) {
@@ -353,6 +359,7 @@ async function confirmAction() {
 onMounted(() => {
   window.addEventListener("hashchange", onHashChange);
   refreshAIStatus();
+  initializePersistenceStatus();
   void model.load();
 });
 onBeforeUnmount(() => {

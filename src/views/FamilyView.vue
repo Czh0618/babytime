@@ -15,6 +15,7 @@ import {
 } from "@lucide/vue";
 import { dayAge, localDate } from "../domain/date";
 import { aiStatus } from "../lib/ai-service";
+import { describePersistence, persistenceStatus } from "../lib/persistence";
 import type { BabyProfile, FamilyStats } from "../types";
 
 const props = withDefaults(
@@ -58,6 +59,9 @@ const storageLabel = computed(() =>
   props.stats.bytes
     ? `${(props.stats.bytes / 1024 / 1024).toFixed(1)} MB`
     : "暂无原片",
+);
+const persistence = computed(() =>
+  describePersistence(persistenceStatus.value),
 );
 const aiLabel = computed(() =>
   !aiStatus.value.configured
@@ -202,6 +206,14 @@ function clearData() {
             </p>
           </div>
           <span class="pill">{{ storageLabel }}</span>
+        </div>
+        <div class="setting-row">
+          <ShieldCheck :size="20" aria-hidden="true" />
+          <div>
+            <strong>本机存储保护</strong>
+            <p class="muted">{{ persistence.copy }}</p>
+          </div>
+          <span class="pill">{{ persistence.label }}</span>
         </div>
         <div class="setting-row">
           <ShieldCheck :size="20" aria-hidden="true" />
