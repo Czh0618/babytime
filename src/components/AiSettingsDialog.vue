@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { PlugZap, ShieldCheck, Trash2 } from "@lucide/vue";
+import { Eye, EyeOff, PlugZap, ShieldCheck, Trash2 } from "@lucide/vue";
 import ModalDialog from "./ModalDialog.vue";
 import {
   aiChat,
@@ -21,6 +21,8 @@ const form = reactive({
   enabled: true,
 });
 const busy = ref(false);
+/** 默认明文：iOS 的 password 字段会禁用第三方输入法，也无法复制粘贴复杂密钥。 */
+const keyHidden = ref(false);
 const message = ref("");
 const messageKind = ref<"success" | "error">("success");
 let controller: AbortController | undefined;
@@ -74,6 +76,7 @@ async function testConnection() {
 function remove() {
   clearAIConfig();
   Object.assign(form, { baseUrl: "", apiKey: "", model: "", enabled: true });
+  keyHidden.value = false;
   say("已清除本机配置，AI 辅助整理已关闭。");
 }
 </script>
@@ -94,9 +97,11 @@ function remove() {
         ><span>服务地址 <small>到 /v1 即可，会自动补 /chat/completions</small></span
         ><input
           v-model="form.baseUrl"
-          type="url"
-          inputmode="url"
+          type="text"
+          inputmode="text"
           autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
           spellcheck="false"
           placeholder="https://your-endpoint.example.com/v1"
       /></label>
@@ -105,19 +110,39 @@ function remove() {
         ><input
           v-model="form.model"
           type="text"
+          inputmode="text"
           autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
           spellcheck="false"
           placeholder="例如 gpt-4o-mini"
       /></label>
-      <label class="field"
-        ><span>API 密钥 <small>只保存在这台设备</small></span
-        ><input
-          v-model="form.apiKey"
-          type="password"
-          autocomplete="new-password"
-          spellcheck="false"
-          placeholder="sk-…"
-      /></label>
+      <div class="field">
+        <span>API 密钥 <small>只存本机 · 默认明文便于粘贴</small></span>
+        <div class="secret-input">
+          <input
+            v-model="form.apiKey"
+            :type="keyHidden ? 'password' : 'text'"
+            inputmode="text"
+            autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            aria-label="API 密钥"
+            placeholder="sk-…"
+          />
+          <button
+            class="secret-toggle"
+            type="button"
+            :aria-label="keyHidden ? '显示密钥' : '隐藏密钥'"
+            :aria-pressed="keyHidden"
+            @click="keyHidden = !keyHidden"
+          >
+            <Eye v-if="keyHidden" :size="18" aria-hidden="true" />
+            <EyeOff v-else :size="18" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
       <label class="check-field"
         ><input v-model="form.enabled" type="checkbox" />启用 AI 辅助整理</label
       >
@@ -126,6 +151,9 @@ function remove() {
         <div>
           <p>
             密钥只写进当前浏览器的本机存储，不会进入工作区或备份 JSON，也不会上传到 BabyTime。
+          </p>
+          <p>
+            输入框默认明文，方便在手机上切换输入法、用跨设备剪贴板粘贴复杂密钥；点右侧图标可临时隐藏。关闭 iOS 自动大写与自动改写，避免密钥被改错。
           </p>
           <p>
             AI 只接收你写下的文字，以及素材的文件名、类型和拍摄时间；照片与视频原片始终留在本机。
@@ -173,6 +201,32 @@ function remove() {
   display: grid;
   gap: 15px;
   margin-top: 20px;
+}
+.secret-input {
+  position: relative;
+}
+.secret-input input {
+  padding-right: 50px;
+}
+.secret-toggle {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.secret-toggle:hover {
+  background: var(--tint);
+  color: var(--accent);
 }
 .ai-privacy {
   display: flex;

@@ -135,13 +135,18 @@ function suggestion(candidate: Candidate) {
           <div v-if="!isDemo(candidate)" class="ai-suggest">
             <label class="field"
               ><span>给 AI 一句话 <small>可选 · 只发送文字</small></span
-              ><input
+              >              <input
                 v-model="hints[candidate.id]"
                 type="text"
+                inputmode="text"
+                autocomplete="off"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
                 maxlength="120"
                 placeholder="例如：第一次一起晒太阳"
                 :disabled="suggestingId === candidate.id"
-            /></label>
+              /></label>
             <div class="ai-suggest-actions">
               <button
                 class="button button-secondary"
