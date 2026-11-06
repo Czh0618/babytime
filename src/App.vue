@@ -22,6 +22,7 @@ import ModalDialog from "./components/ModalDialog.vue";
 import VoiceEntryDialog from "./components/VoiceEntryDialog.vue";
 import VoiceEntryCard from "./components/VoiceEntryCard.vue";
 import AiSettingsDialog from "./components/AiSettingsDialog.vue";
+import BackupReminder from "./components/BackupReminder.vue";
 import TodayCareSummary from "./components/TodayCareSummary.vue";
 import AgeGuideCard from "./components/AgeGuideCard.vue";
 import type { ParentActivity } from "./data/age-guides";
@@ -43,6 +44,7 @@ import {
   buildCaptionUserPrompt,
   parseAICaption,
 } from "./domain/ai";
+import { shouldRemindBackup } from "./domain/backup-reminder";
 import { exportRecap, exportRecords } from "./lib/export";
 import type { PreparedMedia } from "./lib/media";
 import type {
@@ -109,6 +111,35 @@ const importErrors = ref<string[]>([]);
 const originalChoice = ref(false);
 const suggestingId = ref("");
 const aiReady = computed(() => aiAvailable());
+const backupDismissed = ref(false);
+const lastBackupAt = ref<string | null>(null);
+const showBackupReminder = computed(() =>
+  shouldRemindBackup({
+    hasRecords: stats.value.entries > 0 || stats.value.media > 0,
+    lastBackupAt: lastBackupAt.value,
+    now: new Date(),
+    dismissed: backupDismissed.value,
+  }),
+);
+
+function refreshBackupState() {
+  try {
+    lastBackupAt.value = localStorage.getItem("babytime.lastBackupAt");
+  } catch {
+    lastBackupAt.value = null;
+  }
+}
+
+function markBackupDone() {
+  const stamp = new Date().toISOString();
+  try {
+    localStorage.setItem("babytime.lastBackupAt", stamp);
+  } catch {
+    // 隐私模式下写不进去，本次会话仍用内存里的值抑制提醒。
+  }
+  lastBackupAt.value = stamp;
+}
+
 const detail = computed(() => {
   const current = overlay.value;
   return current?.kind === "detail"
@@ -327,7 +358,7 @@ function askRestore(file: File) {
 }
 
 async function downloadBackup() {
-  await perform(async () => {
+  const ok = await perform(async () => {
     const missing = await exportRecords(workspace.value);
     say(
       missing
@@ -336,6 +367,7 @@ async function downloadBackup() {
       missing > 0,
     );
   });
+  if (ok) markBackupDone();
 }
 
 function askDeleteRecap(id: string) {
@@ -360,6 +392,7 @@ onMounted(() => {
   window.addEventListener("hashchange", onHashChange);
   refreshAIStatus();
   initializePersistenceStatus();
+  refreshBackupState();
   void model.load();
 });
 onBeforeUnmount(() => {
@@ -469,6 +502,11 @@ onBeforeUnmount(() => {
           @open="(entry) => (overlay = { kind: 'detail', id: entry.id })"
         >
           <template #today>
+            <BackupReminder
+              v-if="showBackupReminder"
+              @export="downloadBackup"
+              @dismiss="backupDismissed = true"
+            />
             <VoiceEntryCard @start="openVoice" />
             <TodayCareSummary
               :entries="workspace.entries"

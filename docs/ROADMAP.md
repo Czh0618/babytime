@@ -41,7 +41,7 @@
 - [x] **P0.3 迁移引导**
   - 家庭页加一张说明卡：“Safari 和主屏幕数据不互通：先导出备份 → 添加到主屏幕 → 在主屏幕应用里恢复”。
   - 以 `matchMedia('(display-mode: standalone)')` 判断当前环境，Safari 与主屏幕应用显示不同文案。
-- [ ] **P0.4 备份提醒**
+- [x] **P0.4 备份提醒**
   - 导出成功后，把时间写入 localStorage `babytime.lastBackupAt`。
   - 有记录且超过 7 天未备份时，在今天页顶部显示可关闭的提醒，点击直接导出。
   - 验收：用单元测试覆盖“是否该提醒”的纯函数（无记录、刚备份、8 天前备份）。
@@ -271,4 +271,5 @@
 - P0.1（2026-11-06）：新增 `public/manifest.webmanifest`（name / short_name / display=standalone / theme_color / 192+512 PNG 图标），用与 `favicon.svg` 同配色（#eee5d9 / #73543c）的几何字母 b 生成 `public/icon-192.png`、`icon-512.png`，纯标准库写 PNG、未新增运行时依赖、未做 Service Worker；`index.html` 引入 manifest、apple-touch-icon 与 iOS 全屏相关 meta。验证：manifest JSON 可解析，build 产物含 manifest + 两个图标且 index.html 保留 5 处引用，图标经视觉检查可辨认，79 项测试 / 类型检查 / 构建通过。未改数据结构，旧备份导入不受影响。遗留：Chrome DevTools Application → Manifest 无报错、iOS"添加到主屏幕后无地址栏"待真机验证。
 - P0.2（2026-11-06）：新增 `lib/persistence.ts`，`requestPersistentStorage(runtime?)` 支持注入：无 `storage.persist` 或抛错 → unsupported、已 `persisted()` → 不重复申请、`persist()` 返回 true/false → persisted / denied；结果写 `babytime.persistenceStatus` 并在启动时恢复。`ensurePersistenceRequested()` 在首次成功写入（`perform` 成功或导入素材）后只申请一次；家庭页新增「本机存储保护」行显示四种状态与说明。`tests/persistence.test.ts` 7 项覆盖上述分支、状态恢复、只申请一次与文案。86 项测试、类型检查、生产构建通过；未改数据结构，旧备份导入不受影响。遗留：桌面 Chrome 实际显示"已持久化"、375/320px 布局待真机/浏览器实测。
 - P0.3（2026-11-06）：新增 `domain/pwa.ts`——`isStandalone(matchMedia?, navigatorStandalone?)` 可注入且在 matchMedia 缺失/抛错时安全回退，`isIOS(ua)` 识别 iPhone/iPad，`migrationCopy` 给主屏幕应用 / Safari / 桌面三种文案。家庭页新增迁移引导卡，分步写明"Safari 和主屏幕数据不互通：先导出备份 → 添加到主屏幕 → 在主屏幕应用里恢复"。`tests/pwa.test.ts` 5 项覆盖环境判断、异常回退、UA 识别与文案差异。91 项测试、类型检查、生产构建通过；未改数据结构，旧备份导入不受影响。遗留：iOS 真机下 display-mode 切换、375/320px 布局待浏览器实测。
+- P0.4（2026-11-06）：新增 `domain/backup-reminder.ts` 的 `shouldRemindBackup` 纯函数（无记录不提醒、7 天阈值、从未备份或时间损坏按需要备份、本次关闭后不再出现、时钟回拨不误报）；导出成功后写 localStorage `babytime.lastBackupAt`，App 启动时恢复并在今天页 `#today` 插槽顶部显示 `BackupReminder` 卡片，可一键导出或关闭。`tests/backup-reminder.test.ts` 5 项覆盖上述边界。96 项测试、类型检查、生产构建通过；未改数据结构，旧备份导入不受影响。遗留：真实 8 天未备份场景与 375/320px 布局待浏览器实测。
 
