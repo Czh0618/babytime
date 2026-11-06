@@ -32,3 +32,19 @@ export const CARE_LABELS: Record<CareKind, string> = {
   diaper: "换尿布",
   note: "日常备注",
 };
+
+/** 手动记录里「放进哪一类」与照护类型的对应关系，非照护标签返回 undefined。 */
+const TAG_CARE_KINDS: Record<string, CareKind> = {
+  喂奶: "feeding",
+  睡眠: "sleep",
+  换尿布: "diaper",
+  日常备注: "note",
+};
+
+export function careFromTag(
+  tag: string,
+  sourceText = "",
+): CareObservation | undefined {
+  const kind = TAG_CARE_KINDS[tag];
+  return kind ? { kind, sourceText } : undefined;
+}

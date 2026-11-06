@@ -5,7 +5,7 @@ import ModalDialog from "./ModalDialog.vue";
 import MediaTile from "./MediaTile.vue";
 import { localDateTime } from "../domain/date";
 import { validateEntry } from "../domain/records";
-import { CARE_LABELS, type CareKind } from "../domain/care-types";
+import { CARE_LABELS, careFromTag, type CareKind } from "../domain/care-types";
 import { prepareMediaFile, type PreparedMedia } from "../lib/media";
 import {
   ENTRY_TAGS,
@@ -44,6 +44,8 @@ const draft = reactive<EntryDraft>({
   activityId: props.entry?.activityId || props.initialDraft?.activityId,
 });
 const error = ref("");
+/** 手动新建的记录没有照护原话，照护字段由「放进哪一类」驱动。 */
+const tagDrivesCare = ref(!props.entry?.care && !props.initialDraft?.care);
 const video = ref<HTMLVideoElement>();
 const mediaInput = ref<HTMLInputElement>();
 const preparing = ref(false);
@@ -144,6 +146,16 @@ function save() {
   error.value = validateEntry(draft, currentMedia.value?.duration) || "";
   if (!error.value) emit("save", { ...draft }, upload.value);
 }
+function onTagChange(event: Event) {
+  const tag = (event.target as HTMLSelectElement).value;
+  draft.tag = tag;
+  if (!tagDrivesCare.value) return;
+  // 选到照护标签时补出 care（展开奶量等字段），改回普通标签时撤销；
+  // 同类切换保留已填数值，避免用户刚输入的内容被清掉。
+  const next = careFromTag(tag);
+  draft.care = draft.care && draft.care.kind === next?.kind ? draft.care : next;
+}
+
 function updateCareKind(event: Event) {
   if (!draft.care) return;
   const kind = (event.target as HTMLSelectElement).value as CareKind;
@@ -266,7 +278,7 @@ function startPlayback() {
         /></label>
         <label class="field"
           ><span>放进哪一类</span
-          ><select v-model="draft.tag">
+          ><select :value="draft.tag" @change="onTagChange">
             <option v-for="tag in ENTRY_TAGS" :key="tag">{{ tag }}</option>
           </select></label
         >
