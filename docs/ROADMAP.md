@@ -38,7 +38,7 @@
 - [x] **P0.2 持久化存储申请**
   - 首次保存记录后调用 `navigator.storage.persist()`，结果显示在家庭页（已持久化 / 浏览器未批准 / 不支持）。
   - 验收：桌面 Chrome 显示“已持久化”；函数做成可注入，以便测试不支持的分支。
-- [ ] **P0.3 迁移引导**
+- [x] **P0.3 迁移引导**
   - 家庭页加一张说明卡：“Safari 和主屏幕数据不互通：先导出备份 → 添加到主屏幕 → 在主屏幕应用里恢复”。
   - 以 `matchMedia('(display-mode: standalone)')` 判断当前环境，Safari 与主屏幕应用显示不同文案。
 - [ ] **P0.4 备份提醒**
@@ -270,4 +270,5 @@
 - P1.1（2026-11-06）：EntryEditor 的「放进哪一类」改为由 `careFromTag` 驱动——手动新建记录选到喂奶/睡眠/换尿布/日常备注时生成对应 `CareObservation` 并展开数值字段，改回普通标签则撤销；编辑已有语音记录时保持原 care 不被覆盖。新增 `domain/care-types.ts` 的纯函数与 `tests/care-from-tag.test.ts`（5 项）：标签映射、未知标签、原话透传、"喂奶 90ml"校验通过且满足今日卡片计入条件并显示 90 ml、旧 workspace 仍通过 isWorkspace。79 项测试、类型检查、生产构建通过。遗留：375/320px 与 iOS 真机触控待浏览器实测。
 - P0.1（2026-11-06）：新增 `public/manifest.webmanifest`（name / short_name / display=standalone / theme_color / 192+512 PNG 图标），用与 `favicon.svg` 同配色（#eee5d9 / #73543c）的几何字母 b 生成 `public/icon-192.png`、`icon-512.png`，纯标准库写 PNG、未新增运行时依赖、未做 Service Worker；`index.html` 引入 manifest、apple-touch-icon 与 iOS 全屏相关 meta。验证：manifest JSON 可解析，build 产物含 manifest + 两个图标且 index.html 保留 5 处引用，图标经视觉检查可辨认，79 项测试 / 类型检查 / 构建通过。未改数据结构，旧备份导入不受影响。遗留：Chrome DevTools Application → Manifest 无报错、iOS"添加到主屏幕后无地址栏"待真机验证。
 - P0.2（2026-11-06）：新增 `lib/persistence.ts`，`requestPersistentStorage(runtime?)` 支持注入：无 `storage.persist` 或抛错 → unsupported、已 `persisted()` → 不重复申请、`persist()` 返回 true/false → persisted / denied；结果写 `babytime.persistenceStatus` 并在启动时恢复。`ensurePersistenceRequested()` 在首次成功写入（`perform` 成功或导入素材）后只申请一次；家庭页新增「本机存储保护」行显示四种状态与说明。`tests/persistence.test.ts` 7 项覆盖上述分支、状态恢复、只申请一次与文案。86 项测试、类型检查、生产构建通过；未改数据结构，旧备份导入不受影响。遗留：桌面 Chrome 实际显示"已持久化"、375/320px 布局待真机/浏览器实测。
+- P0.3（2026-11-06）：新增 `domain/pwa.ts`——`isStandalone(matchMedia?, navigatorStandalone?)` 可注入且在 matchMedia 缺失/抛错时安全回退，`isIOS(ua)` 识别 iPhone/iPad，`migrationCopy` 给主屏幕应用 / Safari / 桌面三种文案。家庭页新增迁移引导卡，分步写明"Safari 和主屏幕数据不互通：先导出备份 → 添加到主屏幕 → 在主屏幕应用里恢复"。`tests/pwa.test.ts` 5 项覆盖环境判断、异常回退、UA 识别与文案差异。91 项测试、类型检查、生产构建通过；未改数据结构，旧备份导入不受影响。遗留：iOS 真机下 display-mode 切换、375/320px 布局待浏览器实测。
 

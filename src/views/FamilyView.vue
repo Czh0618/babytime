@@ -9,6 +9,7 @@ import {
   Save,
   Settings2,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   Trash2,
   UserRound,
@@ -16,6 +17,7 @@ import {
 import { dayAge, localDate } from "../domain/date";
 import { aiStatus } from "../lib/ai-service";
 import { describePersistence, persistenceStatus } from "../lib/persistence";
+import { isIOS, isStandalone, migrationCopy } from "../domain/pwa";
 import type { BabyProfile, FamilyStats } from "../types";
 
 const props = withDefaults(
@@ -40,6 +42,10 @@ const emit = defineEmits<{
 const draft = reactive<BabyProfile>({ ...props.baby });
 const notice = reactive({ text: "", kind: "success" as "success" | "error" });
 const today = localDate();
+const migration = migrationCopy({
+  standalone: isStandalone(),
+  ios: isIOS(typeof navigator === "undefined" ? "" : navigator.userAgent),
+});
 
 watch(
   () => props.baby,
@@ -252,6 +258,24 @@ function clearData() {
       </div>
     </section>
 
+    <section class="migration-card" aria-labelledby="migration-heading">
+      <div class="migration-icon">
+        <Smartphone :size="20" aria-hidden="true" />
+      </div>
+      <div>
+        <p class="eyebrow">KEEP YOUR RECORDS</p>
+        <h2 id="migration-heading" class="section-heading">
+          {{ migration.title }}
+        </h2>
+        <ol class="migration-steps">
+          <li v-for="(step, index) in migration.steps" :key="index">
+            {{ step }}
+          </li>
+        </ol>
+        <p class="muted">{{ migration.note }}</p>
+      </div>
+    </section>
+
     <section class="data-section" aria-labelledby="data-heading">
       <div class="section-heading-row">
         <div>
@@ -445,6 +469,39 @@ function clearData() {
 .data-section {
   margin-top: 30px;
 }
+.migration-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 22px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--tint);
+}
+.migration-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--accent);
+}
+.migration-steps {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.migration-card .muted {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
 .settings-list,
 .data-actions {
   margin-top: 14px;
@@ -530,6 +587,14 @@ function clearData() {
   .setting-row,
   .data-action {
     align-items: flex-start;
+  }
+  .migration-card {
+    gap: 10px;
+    padding: 15px;
+  }
+  .migration-icon {
+    width: 40px;
+    height: 40px;
   }
   .setting-row .pill {
     margin-left: auto;
