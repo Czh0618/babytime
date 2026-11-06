@@ -51,7 +51,7 @@
 - [x] **P1.1 修复：手动记录选“喂奶”标签不生成 `care`**
   - 位置：`src/components/EntryEditor.vue:270` 附近。手动选择照护类标签时，要生成对应的 `CareObservation`，让今日卡片计入。
   - 验收：手动新建一条“喂奶 90ml”，今日合计 +1，奶量 +90；补测试。
-- [ ] **P1.2 扩展照护类型与字段**（三处同步）
+- [x] **P1.2 扩展照护类型与字段**（三处同步）
   - `CareObservation` 新增：
     - `feedingMethod?: "breast" | "bottle-formula" | "bottle-breastmilk" | "solid" | "pump"`
     - `breastSide?: "left" | "right" | "both"`，以及 `leftMinutes?` / `rightMinutes?`
@@ -272,4 +272,5 @@
 - P0.2（2026-11-06）：新增 `lib/persistence.ts`，`requestPersistentStorage(runtime?)` 支持注入：无 `storage.persist` 或抛错 → unsupported、已 `persisted()` → 不重复申请、`persist()` 返回 true/false → persisted / denied；结果写 `babytime.persistenceStatus` 并在启动时恢复。`ensurePersistenceRequested()` 在首次成功写入（`perform` 成功或导入素材）后只申请一次；家庭页新增「本机存储保护」行显示四种状态与说明。`tests/persistence.test.ts` 7 项覆盖上述分支、状态恢复、只申请一次与文案。86 项测试、类型检查、生产构建通过；未改数据结构，旧备份导入不受影响。遗留：桌面 Chrome 实际显示"已持久化"、375/320px 布局待真机/浏览器实测。
 - P0.3（2026-11-06）：新增 `domain/pwa.ts`——`isStandalone(matchMedia?, navigatorStandalone?)` 可注入且在 matchMedia 缺失/抛错时安全回退，`isIOS(ua)` 识别 iPhone/iPad，`migrationCopy` 给主屏幕应用 / Safari / 桌面三种文案。家庭页新增迁移引导卡，分步写明"Safari 和主屏幕数据不互通：先导出备份 → 添加到主屏幕 → 在主屏幕应用里恢复"。`tests/pwa.test.ts` 5 项覆盖环境判断、异常回退、UA 识别与文案差异。91 项测试、类型检查、生产构建通过；未改数据结构，旧备份导入不受影响。遗留：iOS 真机下 display-mode 切换、375/320px 布局待浏览器实测。
 - P0.4（2026-11-06）：新增 `domain/backup-reminder.ts` 的 `shouldRemindBackup` 纯函数（无记录不提醒、7 天阈值、从未备份或时间损坏按需要备份、本次关闭后不再出现、时钟回拨不误报）；导出成功后写 localStorage `babytime.lastBackupAt`，App 启动时恢复并在今天页 `#today` 插槽顶部显示 `BackupReminder` 卡片，可一键导出或关闭。`tests/backup-reminder.test.ts` 5 项覆盖上述边界。96 项测试、类型检查、生产构建通过；未改数据结构，旧备份导入不受影响。遗留：真实 8 天未备份场景与 375/320px 布局待浏览器实测。
+- P1.2 + AI.1 喂养部分（2026-11-06，同一原子变更故合并为一个 commit）：`care-types.ts` 新增 `FeedingMethod` / `BreastSide` 与 7 个全可选字段（feedingMethod / breastSide / leftMinutes / rightMinutes / feedingMinutes / food / reaction）及 `reviewNote`，**三处同步**完成：本机规则 `voice-parser.ts`（kindFor 支持配方奶/辅食/吸奶/亲喂与"睡的/醒的"、splitClauses 合并亲喂左右、`parseFeedingFields`、`voiceDraftToEntry` 只在有值时写入以保持旧记录结构），AI 侧 `ai.ts`（提示词加字段与范围约束，`parseAIVoiceDrafts` 逐字段白名单：枚举、奶量 0–400、分钟 0–600、字符串长度，越界丢弃并给「请核对」提示），以及 `workspace-schema.ts` 的 validCare 扩展。`care-records.ts` 补 `describeCare` 新文案与 `summarizeMilk`（吸出量不计入摄入），今日卡片显示"摄入 X ml · 吸出 Y ml"；语音草稿页显示识别摘要与 reviewNote。ROADMAP 指定 5 句全部解析正确：配方奶 14:00/90ml、喂奶 15 分钟、亲喂左 15 右 10 合并一条、辅食南瓜泥 + 吸奶 120ml 两条、睡着/醒来两条且时间仍需确认。新增 `tests/care-fields.test.ts` 6 项、`tests/ai.test.ts` 3 项、`tests/voice-parser.test.ts` 6 项；111 项测试、类型检查、生产构建通过，旧备份导入测试通过。**遗留**：编辑弹窗暂不提供细分字段编辑（草稿页只读核对）；AI.1 的体温用药 / 接种 / 测量部分随 P2.2–P2.4 再做，因此 AI.1 复选框保持未勾选；375/320px 与真机待浏览器实测。
 

@@ -227,3 +227,84 @@ test("模型重复输出同一件事时只保留一条草稿", () => {
   );
   assert.equal(drafts.length, 1);
 });
+
+test("AI.1 合法的喂养细分字段全部保留，不产生核对提示", () => {
+  const source = "亲喂左边15分钟，右边10分钟";
+  const [draft] = parseAIVoiceDrafts(
+    JSON.stringify({
+      items: [
+        {
+          kind: "feeding",
+          title: "亲喂",
+          capturedAt: "2026-11-04T18:30",
+          amountMl: 90,
+          feedingMethod: "bottle-formula",
+          breastSide: "both",
+          leftMinutes: 15,
+          rightMinutes: 10,
+          feedingMinutes: 25,
+          food: "南瓜泥",
+          reaction: "无",
+          sourceText: source,
+        },
+      ],
+    }),
+    source,
+  );
+  assert.equal(draft!.feedingMethod, "bottle-formula");
+  assert.equal(draft!.breastSide, "both");
+  assert.equal(draft!.leftMinutes, 15);
+  assert.equal(draft!.rightMinutes, 10);
+  assert.equal(draft!.feedingMinutes, 25);
+  assert.equal(draft!.food, "南瓜泥");
+  assert.equal(draft!.reaction, "无");
+  assert.equal(draft!.reviewNote, undefined);
+});
+
+test("AI.1 越界数值、未知枚举与超长文本被丢弃并标记请核对", () => {
+  const [draft] = parseAIVoiceDrafts(
+    JSON.stringify({
+      items: [
+        {
+          kind: "feeding",
+          capturedAt: "2026-11-04T18:30",
+          amountMl: 500,
+          feedingMethod: "unknown-method",
+          breastSide: "middle",
+          leftMinutes: 999,
+          food: "字".repeat(30),
+          sourceText: "喂奶",
+        },
+      ],
+    }),
+    "喂奶",
+  );
+  assert.equal(draft!.amountMl, undefined);
+  assert.equal(draft!.feedingMethod, undefined);
+  assert.equal(draft!.breastSide, undefined);
+  assert.equal(draft!.leftMinutes, undefined);
+  assert.equal(draft!.food, undefined);
+  assert.match(draft!.reviewNote ?? "", /请核对/);
+  assert.match(draft!.reviewNote ?? "", /奶量/);
+});
+
+test("AI.1 多余字段被忽略，非喂养记录不带喂养字段", () => {
+  const [draft] = parseAIVoiceDrafts(
+    JSON.stringify({
+      items: [
+        {
+          kind: "sleep",
+          capturedAt: "2026-11-04T18:30",
+          sleepState: "asleep",
+          feedingMethod: "pump",
+          extraField: "should-be-ignored",
+          sourceText: "睡着了",
+        },
+      ],
+    }),
+    "睡着了",
+  );
+  assert.equal(draft!.kind, "sleep");
+  assert.equal(draft!.feedingMethod, undefined);
+  assert.equal("extraField" in draft!, false);
+});

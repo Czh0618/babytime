@@ -16,6 +16,7 @@ import {
   type VoiceDraft,
 } from "../domain/care-types";
 import { localDateTime } from "../domain/date";
+import { describeCare } from "../domain/care-records";
 import { createId } from "../domain/id";
 import {
   getBrowserSpeechAvailability,
@@ -241,6 +242,31 @@ async function parseWithAI() {
     aiController = undefined;
     aiBusy.value = false;
   }
+}
+
+/** 把识别出的喂养细分字段用与记录详情一致的措辞展示，方便家长核对。 */
+function draftExtras(draft: VoiceDraft): string {
+  if (
+    !draft.feedingMethod &&
+    !draft.food &&
+    !draft.reaction &&
+    !draft.feedingMinutes &&
+    !draft.leftMinutes &&
+    !draft.rightMinutes
+  )
+    return "";
+  return describeCare({
+    kind: draft.kind,
+    amountMl: draft.amountMl,
+    sourceText: draft.sourceText,
+    feedingMethod: draft.feedingMethod,
+    breastSide: draft.breastSide,
+    leftMinutes: draft.leftMinutes,
+    rightMinutes: draft.rightMinutes,
+    feedingMinutes: draft.feedingMinutes,
+    food: draft.food,
+    reaction: draft.reaction,
+  });
 }
 
 function updateDraft(index: number, change: Partial<VoiceDraft>) {
@@ -597,6 +623,12 @@ onBeforeUnmount(() => {
           <summary>查看录入原话</summary>
           <p>{{ draft.sourceText }}</p>
         </details>
+        <p v-if="draft.reviewNote" class="draft-warning" role="alert">
+          {{ draft.reviewNote }}
+        </p>
+        <p v-if="draftExtras(draft)" class="draft-extras muted">
+          识别到：{{ draftExtras(draft) }}
+        </p>
         <p v-if="validateVoiceDraft(draft)" class="draft-warning" role="alert">
           {{ validateVoiceDraft(draft) }}
         </p>
@@ -764,6 +796,10 @@ onBeforeUnmount(() => {
 }
 .time-confirm {
   font-size: 12px;
+}
+.draft-extras {
+  font-size: 12px;
+  line-height: 1.7;
 }
 .draft-warning {
   color: var(--danger);

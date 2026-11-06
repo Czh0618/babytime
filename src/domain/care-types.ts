@@ -1,6 +1,36 @@
 export type CareKind = "feeding" | "sleep" | "diaper" | "note";
 
-export interface CareObservation {
+export type FeedingMethod =
+  | "breast"
+  | "bottle-formula"
+  | "bottle-breastmilk"
+  | "solid"
+  | "pump";
+
+export type BreastSide = "left" | "right" | "both";
+
+export const FEEDING_METHODS: readonly FeedingMethod[] = [
+  "breast",
+  "bottle-formula",
+  "bottle-breastmilk",
+  "solid",
+  "pump",
+];
+
+export const BREAST_SIDES: readonly BreastSide[] = ["left", "right", "both"];
+
+/** 照护记录里的可选细分字段；全部可选，旧数据没有这些字段也能正常加载。 */
+export interface CareFields {
+  feedingMethod?: FeedingMethod;
+  breastSide?: BreastSide;
+  leftMinutes?: number;
+  rightMinutes?: number;
+  feedingMinutes?: number;
+  food?: string;
+  reaction?: string;
+}
+
+export interface CareObservation extends CareFields {
   kind: CareKind;
   amountMl?: number;
   durationMinutes?: number;
@@ -11,7 +41,7 @@ export interface CareObservation {
   inputId?: string;
 }
 
-export interface VoiceDraft {
+export interface VoiceDraft extends CareFields {
   id: string;
   kind: CareKind;
   title: string;
@@ -24,6 +54,8 @@ export interface VoiceDraft {
   sleepState?: "asleep" | "awake" | "duration";
   diaper?: "wet" | "dirty" | "mixed" | "changed";
   sourceText: string;
+  /** AI 输出里越界字段被丢弃时，提示家长核对。 */
+  reviewNote?: string;
 }
 
 export const CARE_LABELS: Record<CareKind, string> = {

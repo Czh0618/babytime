@@ -145,3 +145,72 @@ test("计划语句保留为备注，不生成已经发生的照护事件", () =>
     assert.equal(draft!.sourceText, text);
   }
 });
+
+test("P1.2 配方奶：方式、奶量与下午时刻", () => {
+  const [draft] = parseVoiceTranscript("下午两点喝了90毫升配方奶", now);
+  assert.equal(draft!.kind, "feeding");
+  assert.equal(draft!.feedingMethod, "bottle-formula");
+  assert.equal(draft!.amountMl, 90);
+  assert.equal(draft!.capturedAt, "2026-11-04T14:00");
+});
+
+test("P1.2 喂奶时长", () => {
+  const [draft] = parseVoiceTranscript("喂奶15分钟", now);
+  assert.equal(draft!.kind, "feeding");
+  assert.equal(draft!.feedingMinutes, 15);
+});
+
+test("P1.2 亲喂左右合并成一条，分别记录两侧分钟", () => {
+  const drafts = parseVoiceTranscript("亲喂左边15分钟，右边10分钟", now);
+  assert.equal(drafts.length, 1);
+  const draft = drafts[0]!;
+  assert.equal(draft.feedingMethod, "breast");
+  assert.equal(draft.breastSide, "both");
+  assert.equal(draft.leftMinutes, 15);
+  assert.equal(draft.rightMinutes, 10);
+});
+
+test("P1.2 辅食与吸奶拆成两条", () => {
+  const drafts = parseVoiceTranscript("吃了辅食南瓜泥半碗；吸奶120毫升", now);
+  assert.equal(drafts.length, 2);
+  assert.deepEqual(
+    drafts.map((d) => [d.feedingMethod, d.food ?? "", d.amountMl ?? 0]),
+    [
+      ["solid", "南瓜泥", 0],
+      ["pump", "", 120],
+    ],
+  );
+});
+
+test("P1.2 睡着与醒来两条，时间仍需家长确认", () => {
+  const drafts = parseVoiceTranscript("两点睡的，四点醒的", now);
+  assert.equal(drafts.length, 2);
+  assert.deepEqual(
+    drafts.map((d) => d.kind),
+    ["sleep", "sleep"],
+  );
+  assert.deepEqual(
+    drafts.map((d) => d.sleepState),
+    ["asleep", "awake"],
+  );
+  assert.ok(drafts.every((d) => d.needsTimeConfirmation && d.capturedAt === ""));
+});
+
+test("P1.2 转换成长记录时保留新字段，旧记录不产生多余字段", () => {
+  const [draft] = parseVoiceTranscript("亲喂左边15分钟，右边10分钟", now);
+  const entry = voiceDraftToEntry(draft!, "batch-1");
+  assert.equal(entry.care?.feedingMethod, "breast");
+  assert.equal(entry.care?.breastSide, "both");
+  assert.equal(entry.care?.leftMinutes, 15);
+  assert.equal(entry.care?.rightMinutes, 10);
+  const [plain] = parseVoiceTranscript("刚刚喂奶90ml", now);
+  assert.deepEqual(Object.keys(voiceDraftToEntry(plain!, "b").care!).sort(), [
+    "amountMl",
+    "diaper",
+    "durationMinutes",
+    "inputId",
+    "kind",
+    "sleepState",
+    "sourceText",
+  ]);
+});

@@ -4,7 +4,7 @@ import { Baby, Milk, Moon } from "@lucide/vue";
 import type { GrowthEntry } from "../types";
 import type { CareKind } from "../domain/care-types";
 import { localDate, formatTime } from "../domain/date";
-import { describeCare } from "../domain/care-records";
+import { describeCare, summarizeMilk } from "../domain/care-records";
 const props = defineProps<{ entries: GrowthEntry[] }>();
 const emit = defineEmits<{ voice: []; open: [entry: GrowthEntry] }>();
 const categories = [
@@ -12,6 +12,7 @@ const categories = [
   { kind: "sleep", title: "睡眠", icon: Moon },
   { kind: "diaper", title: "换尿布", icon: Baby },
 ] as const;
+const milk = computed(() => summarizeMilk(props.entries));
 const now = ref(Date.now());
 const tick = () => (now.value = Date.now());
 const timer = setInterval(tick, 60_000);
@@ -85,10 +86,21 @@ const latest = computed(() => {
         }}</span>
       </button>
     </div>
+    <p v-if="milk.intakeMl || milk.pumpedMl" class="milk-summary">
+      今日奶量：摄入 {{ milk.intakeMl }} ml<span v-if="milk.pumpedMl">
+        · 吸出 {{ milk.pumpedMl }} ml（不计入摄入）</span
+      >
+    </p>
   </section>
 </template>
 
 <style scoped>
+.milk-summary {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  line-height: 1.6;
+}
 .care-summary-heading {
   display: flex;
   justify-content: space-between;

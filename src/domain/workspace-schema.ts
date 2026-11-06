@@ -59,6 +59,9 @@ const finiteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 const optionalNumber = (value: unknown) =>
   value === undefined || finiteNumber(value);
+const optionalEnum = (value: unknown, allowed: readonly string[]) =>
+  value === undefined ||
+  (typeof value === "string" && allowed.includes(value));
 
 function validCare(value: unknown): boolean {
   if (value === undefined) return true;
@@ -71,6 +74,19 @@ function validCare(value: unknown): boolean {
     optionalString(care.inputId) &&
     optionalNumber(care.amountMl) &&
     optionalNumber(care.durationMinutes) &&
+    optionalNumber(care.leftMinutes) &&
+    optionalNumber(care.rightMinutes) &&
+    optionalNumber(care.feedingMinutes) &&
+    optionalString(care.food) &&
+    optionalString(care.reaction) &&
+    optionalEnum(care.feedingMethod, [
+      "breast",
+      "bottle-formula",
+      "bottle-breastmilk",
+      "solid",
+      "pump",
+    ]) &&
+    optionalEnum(care.breastSide, ["left", "right", "both"]) &&
     (care.sleepState === undefined ||
       (typeof care.sleepState === "string" &&
         ["asleep", "awake", "duration"].includes(care.sleepState))) &&
