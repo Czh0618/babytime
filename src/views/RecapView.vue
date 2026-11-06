@@ -303,10 +303,7 @@ function createRecap() {
       </div>
 
       <div class="builder-footer">
-        <p class="muted helper-text">
-          当前版本保存为图文回顾。视频成片和 MP4
-          下载会在服务端媒体处理接入后开启。
-        </p>
+        <p class="muted helper-text">当前版本保存为图文回顾。</p>
         <button
           class="button button-primary"
           type="submit"
