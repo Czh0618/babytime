@@ -30,6 +30,8 @@ import FirstRunGuide from "./components/FirstRunGuide.vue";
 import TodayCareSummary from "./components/TodayCareSummary.vue";
 import AgeGuideCard from "./components/AgeGuideCard.vue";
 import VisitSummary from "./components/VisitSummary.vue";
+import AnniversaryCard from "./components/AnniversaryCard.vue";
+import HandoffCard from "./components/HandoffCard.vue";
 import type { ParentActivity } from "./data/age-guides";
 import type { VoiceDraft } from "./domain/care-types";
 import {
@@ -76,6 +78,8 @@ import { buildVaccineIcs, icsFileName } from "./lib/ics";
 import { downloadBlob } from "./lib/export";
 import { buildVisitSummary } from "./domain/summary";
 import { buildEntriesCsv } from "./lib/csv";
+import { findAnniversary } from "./domain/anniversary";
+import { buildHandoffSummary } from "./domain/handoff";
 import { isNightTime } from "./domain/night";
 import { exportRecap, exportRecords } from "./lib/export";
 import type { PreparedMedia } from "./lib/media";
@@ -550,6 +554,15 @@ function toggleMilestoneKey(key: string) {
 }
 
 const visitOpen = ref(false);
+const anniversaryDismissed = ref(false);
+const anniversary = computed(() =>
+  findAnniversary(workspace.value.baby, workspace.value.entries),
+);
+const handoff = computed(() =>
+  buildHandoffSummary(workspace.value.entries, {
+    name: workspace.value.baby.name,
+  }),
+);
 const ageMonths = computed(() => {
   const age = ageOn(workspace.value.baby.birthDate);
   return age.valid ? age.months : undefined;
@@ -718,6 +731,12 @@ onBeforeUnmount(() => {
               @export="downloadBackup"
               @dismiss="backupDismissed = true"
             />
+            <AnniversaryCard
+              v-if="anniversary && !anniversaryDismissed"
+              :anniversary="anniversary"
+              :ai-ready="aiReady"
+              @dismiss="anniversaryDismissed = true"
+            />
             <VoiceEntryCard @start="openVoice" />
             <QuickLogCard
               :timer="activeTimer"
@@ -736,6 +755,7 @@ onBeforeUnmount(() => {
               @voice="openVoice"
               @open="(entry) => (overlay = { kind: 'detail', id: entry.id })"
             />
+            <HandoffCard v-if="handoff" :summary="handoff" :ai-ready="aiReady" />
             <AgeGuideCard
               :baby="workspace.baby"
               :milestones="workspace.milestones ?? {}"
@@ -767,6 +787,7 @@ onBeforeUnmount(() => {
           :busy="busy"
           :error="formError"
           :age-months="ageMonths"
+          :ai-ready="aiReady"
           @create="createRecap"
           @open="(item) => (overlay = { kind: 'recap', id: item.id })"
           @download="
@@ -786,6 +807,7 @@ onBeforeUnmount(() => {
           :entries="workspace.entries"
           :milestones="workspace.milestones ?? {}"
           :busy="busy"
+          :ai-ready="aiReady"
           @save-plan="saveVaccinePlan"
           @add-record="addVaccination"
           @remove-record="removeVaccination"

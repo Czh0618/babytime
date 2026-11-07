@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import {
   ArrowDown,
   ArrowUp,
@@ -16,6 +16,13 @@ import {
 import MediaTile from "../components/MediaTile.vue";
 import TrendChart from "../components/TrendChart.vue";
 import { formatDate, formatTime } from "../domain/date";
+import { suggestMonthlyRecap } from "../domain/recap-draft";
+import {
+  RECAP_SYSTEM_PROMPT,
+  buildRecapUserPrompt,
+  parseRecapCopy,
+} from "../domain/ai";
+import { aiChat, aiErrorMessage } from "../lib/ai-service";
 import type { GrowthEntry, MediaAsset, Recap, RecapDraft } from "../types";
 
 const props = withDefaults(
@@ -26,8 +33,9 @@ const props = withDefaults(
     busy?: boolean;
     error?: string;
     ageMonths?: number;
+    aiReady?: boolean;
   }>(),
-  { busy: false, error: "" },
+  { busy: false, error: "", aiReady: false },
 );
 
 const emit = defineEmits<{
@@ -44,6 +52,53 @@ const dateTo = ref("");
 const selected = ref<string[]>([]);
 const notice = ref("");
 const pendingCreate = ref<string | null>(null);
+const draftDismissed = ref(false);
+/** 上个月的回顾草稿：按收藏与里程碑预选，确认后才保存。 */
+const monthlyDraft = computed(() => suggestMonthlyRecap(props.entries));
+
+async function useMonthlyDraft() {
+  const draft = monthlyDraft.value;
+  if (!draft) return;
+  title.value = draft.title;
+  dateFrom.value = draft.dateFrom;
+  dateTo.value = draft.dateTo;
+  creating.value = true;
+  // 等日期 watch 完成筛选后再设置选中的条目。
+  await nextTick();
+  selected.value = draft.entryIds;
+  notice.value = "已按收藏和里程碑预选上个月的瞬间，可以增减后再保存。";
+}
+
+const aiBusy = ref(false);
+const aiError = ref("");
+
+/** 用 AI 给这份草稿起标题与一句短文；只发标题列表，不发图片。 */
+async function aiTitle() {
+  const draft = monthlyDraft.value;
+  if (!draft || aiBusy.value || !props.aiReady) return;
+  aiBusy.value = true;
+  aiError.value = "";
+  try {
+    await useMonthlyDraft();
+    const items = draft.entryIds
+      .map((id) => props.entries.find((entry) => entry.id === id)?.title ?? "")
+      .filter(Boolean);
+    const raw = await aiChat(
+      RECAP_SYSTEM_PROMPT,
+      buildRecapUserPrompt({
+        month: `${draft.dateFrom} 至 ${draft.dateTo}`,
+        items,
+      }),
+    );
+    const copy = parseRecapCopy(raw);
+    title.value = copy.title;
+    notice.value = copy.note ? `AI 建议：${copy.note}` : "AI 起好了标题，可以改。";
+  } catch (cause) {
+    aiError.value = aiErrorMessage(cause);
+  } finally {
+    aiBusy.value = false;
+  }
+}
 
 const sortedEntries = computed(() =>
   [...props.entries].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt)),
@@ -176,6 +231,46 @@ function createRecap() {
       >
         <Plus :size="17" aria-hidden="true" /> 新建
       </button>
+    </div>
+
+    <div
+      v-if="monthlyDraft && !draftDismissed && !creating"
+      class="monthly-draft"
+      role="status"
+    >
+      <div>
+        <strong>{{ monthlyDraft.title }}</strong>
+        <p class="muted">
+          已预选 {{ monthlyDraft.entryIds.length }}
+          个瞬间（收藏与里程碑优先），确认后才会保存。
+        </p>
+      </div>
+      <div class="monthly-draft-actions">
+        <button
+          class="button button-secondary"
+          type="button"
+          @click="useMonthlyDraft"
+        >
+          用它生成
+        </button>
+        <button
+          v-if="aiReady"
+          class="button button-ghost"
+          type="button"
+          :disabled="aiBusy"
+          @click="aiTitle"
+        >
+          {{ aiBusy ? "AI 正在写…" : "AI 起个标题" }}
+        </button>
+        <button
+          class="button button-ghost"
+          type="button"
+          @click="draftDismissed = true"
+        >
+          这次不用
+        </button>
+      </div>
+      <p v-if="aiError" class="monthly-draft-error" role="alert">{{ aiError }}</p>
     </div>
 
     <TrendChart :entries="props.entries" :age-months="props.ageMonths" />
@@ -666,5 +761,41 @@ function createRecap() {
   .selection-copy strong {
     white-space: normal;
   }
+}
+.monthly-draft {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 18px 0 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--tint);
+}
+.monthly-draft strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.monthly-draft p {
+  margin: 4px 0 0;
+  font-size: var(--font-xs);
+  line-height: 1.6;
+}
+.monthly-draft-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.monthly-draft-actions .button {
+  min-height: 40px;
+  font-size: 13px;
+}
+.monthly-draft-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
 }
 </style>

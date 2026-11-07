@@ -25,6 +25,7 @@ import {
 } from "../domain/growth";
 import { achievedMilestones } from "../domain/milestones";
 import GrowthChart from "../components/GrowthChart.vue";
+import AskRecordsCard from "../components/AskRecordsCard.vue";
 
 const props = defineProps<{
   baby: BabyProfile;
@@ -33,6 +34,7 @@ const props = defineProps<{
   entries: GrowthEntry[];
   milestones: Record<string, string>;
   busy: boolean;
+  aiReady: boolean;
 }>();
 const emit = defineEmits<{
   savePlan: [plan: VaccinePlan];
@@ -502,6 +504,12 @@ function toggleSpecial(event: Event) {
       </ul>
       <p v-else class="empty-hint">还没有勾选过里程碑。</p>
     </section>
+
+    <AskRecordsCard
+      :baby="props.baby"
+      :entries="props.entries"
+      :ai-ready="props.aiReady"
+    />
 
     <section class="custom-card surface">
       <h2 class="section-heading">自费疫苗</h2>
