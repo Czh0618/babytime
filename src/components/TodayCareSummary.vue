@@ -5,6 +5,11 @@ import type { GrowthEntry } from "../types";
 import type { CareKind } from "../domain/care-types";
 import { localDate, formatTime } from "../domain/date";
 import { describeCare, summarizeMilk } from "../domain/care-records";
+import {
+  deriveSleepSegments,
+  formatMinutes,
+  sleepSummaryForDay,
+} from "../domain/sleep";
 const props = defineProps<{ entries: GrowthEntry[] }>();
 const emit = defineEmits<{ voice: []; open: [entry: GrowthEntry] }>();
 const categories = [
@@ -13,6 +18,9 @@ const categories = [
   { kind: "diaper", title: "换尿布", icon: Baby },
 ] as const;
 const milk = computed(() => summarizeMilk(props.entries));
+const sleep = computed(() =>
+  sleepSummaryForDay(deriveSleepSegments(props.entries), localDate()),
+);
 const now = ref(Date.now());
 const tick = () => (now.value = Date.now());
 const timer = setInterval(tick, 60_000);
@@ -90,6 +98,10 @@ const latest = computed(() => {
       今日奶量：摄入 {{ milk.intakeMl }} ml<span v-if="milk.pumpedMl">
         · 吸出 {{ milk.pumpedMl }} ml（不计入摄入）</span
       >
+    </p>
+    <p v-if="sleep.totalMinutes" class="milk-summary">
+      今日睡眠：共 {{ formatMinutes(sleep.totalMinutes) }} · 最长一段
+      {{ formatMinutes(sleep.longestMinutes) }}
     </p>
   </section>
 </template>
