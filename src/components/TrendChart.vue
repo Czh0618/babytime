@@ -1,16 +1,53 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { Sparkles } from "@lucide/vue";
 import type { GrowthEntry } from "../types";
 import {
   aggregateByDay,
   metricValue,
+  nightSummary,
   TREND_METRICS,
   type TrendMetric,
 } from "../domain/stats";
+import { deriveSleepSegments } from "../domain/sleep";
+import {
+  TREND_SYSTEM_PROMPT,
+  buildStatsDigest,
+  guardMedicalOutput,
+} from "../domain/ai";
+import { aiAvailable, aiChat, aiErrorMessage } from "../lib/ai-service";
 
-const props = defineProps<{ entries: GrowthEntry[] }>();
+const props = defineProps<{ entries: GrowthEntry[]; ageMonths?: number }>();
 const range = ref<7 | 30>(7);
 const metric = ref<TrendMetric>("intake");
+const aiReady = computed(() => aiAvailable());
+const insight = ref("");
+const insightError = ref("");
+const interpreting = ref(false);
+
+/** 只把聚合数字发给模型，结果只展示、不保存。 */
+async function interpret() {
+  if (interpreting.value || !aiReady.value) return;
+  interpreting.value = true;
+  insightError.value = "";
+  try {
+    const night = nightSummary(
+      props.entries,
+      deriveSleepSegments(props.entries),
+      new Date(),
+    );
+    const digest = buildStatsDigest(stats.value, {
+      ageMonths: props.ageMonths,
+      night,
+    });
+    const raw = await aiChat(TREND_SYSTEM_PROMPT, digest);
+    insight.value = guardMedicalOutput(raw).text.slice(0, 600);
+  } catch (error) {
+    insightError.value = aiErrorMessage(error);
+  } finally {
+    interpreting.value = false;
+  }
+}
 
 const CHART_W = 300;
 const CHART_H = 110;
@@ -131,6 +168,28 @@ function labelFor(date: string, index: number): string {
     <p class="trend-note muted">
       单位：{{ currentMetric.unit }} · 没有记录的日子留空，不按 0 显示。
     </p>
+    <div class="trend-ai">
+      <button
+        class="button button-secondary"
+        type="button"
+        :disabled="interpreting || !aiReady"
+        @click="interpret"
+      >
+        <Sparkles :size="15" aria-hidden="true" />{{
+          interpreting ? "AI 正在看…" : "AI 帮我看看"
+        }}
+      </button>
+      <span v-if="!aiReady" class="trend-ai-hint">
+        先在「家庭 → AI 辅助整理」里配置模型服务
+      </span>
+    </div>
+    <p v-if="insight" class="trend-insight">{{ insight }}</p>
+    <p v-if="insight" class="trend-ai-hint">
+      AI 只收到按天汇总的数字，结果不保存，也不构成健康判断。
+    </p>
+    <p v-if="insightError" class="trend-ai-error" role="alert">
+      {{ insightError }}
+    </p>
   </section>
 </template>
 
@@ -209,6 +268,37 @@ function labelFor(date: string, index: number): string {
   font-size: 12px;
   line-height: 1.6;
   color: var(--muted);
+}
+.trend-ai {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.trend-ai .button {
+  min-height: 40px;
+  font-size: 13px;
+}
+.trend-ai-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.trend-insight {
+  margin: 10px 0 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--tint);
+  font-size: 13px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+.trend-ai-error {
+  margin: 10px 0 0;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.6;
 }
 @media (max-width: 400px) {
   .trend-card {

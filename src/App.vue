@@ -51,6 +51,7 @@ import {
   writeActiveTimer,
 } from "./lib/timer";
 import { localDateTime } from "./domain/date";
+import { ageOn } from "./domain/age";
 import { useWorkspace } from "./lib/workspace";
 import {
   aiAvailable,
@@ -549,6 +550,10 @@ function toggleMilestoneKey(key: string) {
 }
 
 const visitOpen = ref(false);
+const ageMonths = computed(() => {
+  const age = ageOn(workspace.value.baby.birthDate);
+  return age.valid ? age.months : undefined;
+});
 const visitSummary = computed(() =>
   buildVisitSummary(
     workspace.value.entries,
@@ -761,6 +766,7 @@ onBeforeUnmount(() => {
           :recaps="workspace.recaps"
           :busy="busy"
           :error="formError"
+          :age-months="ageMonths"
           @create="createRecap"
           @open="(item) => (overlay = { kind: 'recap', id: item.id })"
           @download="

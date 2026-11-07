@@ -264,6 +264,14 @@ function clearData() {
           <div>
             <strong>AI 辅助整理</strong>
             <p class="muted">{{ aiDescription }}</p>
+            <ul class="ai-scope">
+              <li><span>语音整理</span>只发你口述或输入的文字，不发录音。</li>
+              <li>
+                <span>待整理起名</span>只发文件名、类型、拍摄时间和那句话，看不到画面。
+              </li>
+              <li><span>趋势解读</span>只发按天汇总的数字与月龄，不发原话。</li>
+              <li>宝宝姓名、生日和照片视频始终不发；结果一律先给你确认。</li>
+            </ul>
           </div>
           <div class="ai-setting-actions">
             <span class="pill">{{ aiLabel }}</span>
@@ -588,6 +596,19 @@ function clearData() {
 }
 .setting-row .pill {
   flex: none;
+}
+.ai-scope {
+  display: grid;
+  gap: 3px;
+  margin: 8px 0 0;
+  padding-left: 16px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.ai-scope span {
+  color: var(--ink);
+  font-weight: 500;
 }
 .theme-select {
   flex: none;

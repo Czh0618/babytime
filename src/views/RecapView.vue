@@ -25,6 +25,7 @@ const props = withDefaults(
     recaps: Recap[];
     busy?: boolean;
     error?: string;
+    ageMonths?: number;
   }>(),
   { busy: false, error: "" },
 );
@@ -177,7 +178,7 @@ function createRecap() {
       </button>
     </div>
 
-    <TrendChart :entries="props.entries" />
+    <TrendChart :entries="props.entries" :age-months="props.ageMonths" />
 
     <div v-if="props.error" class="notice error" role="alert">
       {{ props.error }}
