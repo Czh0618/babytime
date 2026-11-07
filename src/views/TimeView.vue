@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { ChevronRight, Heart, Plus, Sparkles, Star } from "@lucide/vue";
-import MediaTile from "../components/MediaTile.vue";
+import { computed, ref, watch } from "vue";
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Plus,
+  Sparkles,
+  Star,
+} from "@lucide/vue";
+import TimelineRow from "../components/TimelineRow.vue";
 import type { BabyProfile, GrowthEntry, MediaAsset } from "../types";
-import { dayAge, formatDate, formatTime } from "../domain/date";
+import { dayAge, formatDate } from "../domain/date";
 import { ageOn } from "../domain/age";
-import { describeCare } from "../domain/care-records";
+import { buildTimeline } from "../domain/timeline";
 
 const props = defineProps<{
   baby: BabyProfile;
@@ -27,14 +34,25 @@ const filter = ref<"all" | "favorite" | "milestone">("all");
 const hasValidBirthday = computed(() => ageOn(props.baby.birthDate).valid);
 
 const visibleEntries = computed(() =>
-  [...props.entries]
-    .filter((entry) => {
-      if (filter.value === "favorite") return entry.favorite;
-      if (filter.value === "milestone") return entry.milestone;
-      return true;
-    })
-    .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt)),
+  [...props.entries].filter((entry) => {
+    if (filter.value === "favorite") return entry.favorite;
+    if (filter.value === "milestone") return entry.milestone;
+    return true;
+  }),
 );
+
+/** 首屏只渲染 14 天，之后每次再加 14 天，避免几千条记录一次铺开。 */
+const PAGE_DAYS = 14;
+const limitDays = ref(PAGE_DAYS);
+const expanded = ref<Set<string>>(new Set());
+const timeline = computed(() =>
+  buildTimeline(visibleEntries.value, limitDays.value),
+);
+
+watch(filter, () => {
+  limitDays.value = PAGE_DAYS;
+  expanded.value = new Set();
+});
 
 const mediaById = computed(
   () => new Map(props.media.map((asset) => [asset.id, asset])),
@@ -50,6 +68,23 @@ function mediaFor(entry: GrowthEntry) {
 
 function openEntry(entry: GrowthEntry) {
   emit("open", entry);
+}
+
+function weekday(date: string) {
+  return new Intl.DateTimeFormat("zh-CN", { weekday: "short" }).format(
+    new Date(`${date}T12:00`),
+  );
+}
+
+function isExpanded(date: string) {
+  return expanded.value.has(date);
+}
+
+function toggleDay(date: string) {
+  const next = new Set(expanded.value);
+  if (next.has(date)) next.delete(date);
+  else next.add(date);
+  expanded.value = next;
 }
 </script>
 
@@ -143,49 +178,70 @@ function openEntry(entry: GrowthEntry) {
       </button>
     </div>
 
-    <div v-if="visibleEntries.length" class="entry-list">
-      <article
-        v-for="entry in visibleEntries"
-        :key="entry.id"
-        class="entry-row"
+    <div v-if="timeline.days.length" class="timeline">
+      <section
+        v-for="day in timeline.days"
+        :key="day.date"
+        class="day-block"
+        :aria-labelledby="`day-${day.date}`"
       >
-        <button class="entry-main" type="button" @click="openEntry(entry)">
-          <MediaTile
-            :media="mediaFor(entry)"
-            variant="thumb"
-            :label="entry.title"
-          />
-          <span class="entry-copy">
-            <strong>{{ entry.title }}</strong>
-            <span class="muted"
-              >{{ formatDate(entry.capturedAt) }} ·
-              {{ formatTime(entry.capturedAt) }}</span
+        <div class="day-head">
+          <h3 :id="`day-${day.date}`">
+            {{ formatDate(day.date) }}
+            <span class="day-week">{{ weekday(day.date) }}</span>
+          </h3>
+          <span class="muted">{{ day.entries.length }} 条</span>
+        </div>
+        <TimelineRow
+          v-for="entry in day.memories"
+          :key="entry.id"
+          :entry="entry"
+          :media="mediaFor(entry)"
+          @open="openEntry"
+          @favorite="(id) => emit('favorite', id)"
+        />
+        <template v-if="day.care.length">
+          <button
+            v-if="!isExpanded(day.date)"
+            class="care-fold"
+            type="button"
+            :aria-expanded="false"
+            @click="toggleDay(day.date)"
+          >
+            <span class="care-fold-label">照护</span>
+            <span class="care-fold-summary">{{ day.careSummary }}</span>
+            <ChevronDown :size="16" aria-hidden="true" />
+          </button>
+          <template v-else>
+            <TimelineRow
+              v-for="entry in day.care"
+              :key="entry.id"
+              :entry="entry"
+              :media="mediaFor(entry)"
+              @open="openEntry"
+              @favorite="(id) => emit('favorite', id)"
+            />
+            <button
+              class="care-fold care-fold-close"
+              type="button"
+              :aria-expanded="true"
+              @click="toggleDay(day.date)"
             >
-            <span class="entry-tag">
-              {{ entry.tag }}
-              <template v-if="entry.care">
-                · {{ describeCare(entry.care) }}</template
-              >
-              <template v-if="entry.milestone"> · 家长标记里程碑</template>
-            </span>
-          </span>
-        </button>
-        <button
-          class="icon-button favorite-button"
-          type="button"
-          :aria-label="
-            entry.favorite ? `取消收藏${entry.title}` : `收藏${entry.title}`
-          "
-          :aria-pressed="entry.favorite"
-          @click.stop="emit('favorite', entry.id)"
-        >
-          <Heart
-            :size="18"
-            :fill="entry.favorite ? 'currentColor' : 'none'"
-            aria-hidden="true"
-          />
-        </button>
-      </article>
+              <span class="care-fold-label">收起照护记录</span>
+              <ChevronUp :size="16" aria-hidden="true" />
+            </button>
+          </template>
+        </template>
+      </section>
+      <button
+        v-if="timeline.hasMore"
+        class="button button-secondary load-more"
+        type="button"
+        @click="limitDays += PAGE_DAYS"
+      >
+        加载更早的日子（还有
+        {{ timeline.totalDays - timeline.days.length }} 天）
+      </button>
     </div>
 
     <div v-else class="empty-state">
@@ -341,62 +397,73 @@ function openEntry(entry: GrowthEntry) {
   border-color: var(--ink);
   color: var(--surface);
 }
-.entry-list {
+.timeline {
   display: grid;
+  gap: 22px;
 }
-.entry-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.day-block {
+  display: grid;
+  gap: 2px;
   min-width: 0;
-  padding: 14px 0;
+}
+.day-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--line);
 }
-.entry-main {
+.day-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.day-week {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-weight: 400;
+}
+.care-fold {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-  padding: 0;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 0;
   border: 0;
+  border-bottom: 1px solid var(--line);
   background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
 }
-.entry-main:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 5px;
-  border-radius: 8px;
+.care-fold-label {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--tint);
+  color: var(--muted);
+  font-size: 12px;
 }
-.entry-copy {
-  display: grid;
+.care-fold-summary {
   flex: 1;
   min-width: 0;
-  gap: 2px;
-}
-.entry-copy strong {
   overflow: hidden;
-  margin: 0 0 2px;
-  font-size: 15px;
-  font-weight: 600;
+  color: var(--muted);
+  font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.entry-tag {
-  display: inline-block;
-  margin-top: 4px;
+.care-fold-close {
+  justify-content: center;
   color: var(--muted);
   font-size: var(--font-xs);
 }
-.favorite-button {
-  flex: none;
-  color: var(--muted);
-}
-.favorite-button[aria-pressed="true"] {
-  color: var(--accent);
-  background: var(--tint);
+.load-more {
+  justify-self: center;
+  margin-top: 4px;
 }
 .empty-state {
   display: grid;
