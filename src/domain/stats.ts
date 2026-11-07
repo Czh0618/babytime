@@ -1,6 +1,11 @@
 import type { GrowthEntry } from "../types.ts";
 import { localDate } from "./date.ts";
-import { deriveSleepSegments, splitSegmentByDay } from "./sleep.ts";
+import {
+  deriveSleepSegments,
+  splitSegmentByDay,
+  type SleepSegment,
+} from "./sleep.ts";
+import { nightWindow } from "./night.ts";
 
 /** 按天聚合照护记录；睡眠段按自然日切分，吸出量不计入摄入。 */
 export interface DayStats {
@@ -96,4 +101,38 @@ export function metricValue(day: DayStats, metric: TrendMetric): number {
   if (metric === "sleep") return day.sleepMinutes / 60;
   if (metric === "diaper") return day.diaperCount;
   return day.intakeMl;
+}
+
+export interface NightSummary {
+  wakeCount: number;
+  longestSleepMinutes: number;
+}
+
+/** 基于同一份按天聚合数据，统计昨夜（前一天 22:00–当天 06:00）的醒来次数与最长连续睡眠。 */
+export function nightSummary(
+  entries: GrowthEntry[],
+  segments: SleepSegment[],
+  now: Date,
+): NightSummary {
+  const { start, end } = nightWindow(now);
+  const inWindow = (value: string) => {
+    const time = Date.parse(value);
+    return time >= start.getTime() && time < end.getTime();
+  };
+  const wakeCount = entries.filter(
+    (entry) =>
+      entry.care?.kind === "sleep" &&
+      entry.care.sleepState === "awake" &&
+      inWindow(entry.capturedAt),
+  ).length;
+  let longestSleepMinutes = 0;
+  for (const segment of segments) {
+    if (!segment.end || segment.minutes === null) continue;
+    const overlap =
+      Math.min(Date.parse(segment.end), end.getTime()) -
+      Math.max(Date.parse(segment.start), start.getTime());
+    if (overlap > 0)
+      longestSleepMinutes = Math.max(longestSleepMinutes, overlap / 60_000);
+  }
+  return { wakeCount, longestSleepMinutes };
 }

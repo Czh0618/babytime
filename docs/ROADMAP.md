@@ -76,7 +76,7 @@
   - 新增 `components/TrendChart.vue`：手写 SVG 柱状图或折线图，可切换 7 天 / 30 天，缺数据的天显示为空而不是 0。
   - 入口放在回顾页顶部，或今日卡片的“看趋势”。
   - 验收：给聚合函数写测试（含跨午夜睡眠、空日）；375px 下图表不溢出，坐标轴文字可读。
-- [ ] **P1.6 夜间功能（用户重点）**
+- [x] **P1.6 夜间功能（用户重点）**
   - a. **深色主题：** 用 `prefers-color-scheme: dark`，加上 `:root` 变量的暗色覆盖；家庭页提供“跟随系统 / 浅色 / 深色”选项，存 localStorage。
   - b. **夜间模式：** 22:00–06:00 期间，今天页把常用快记按钮（喂奶、换尿布、睡/醒）放大并置顶，同时降低亮度（暗色、低对比的暖色）。给“是否夜间”写纯函数测试。
   - c. **夜间统计：** 用 P1.5 的聚合，在今日卡片显示“昨夜醒来 N 次、最长连续睡眠 X 小时”。
@@ -275,4 +275,5 @@
 - P1.2 + AI.1 喂养部分（2026-11-06，同一原子变更故合并为一个 commit）：`care-types.ts` 新增 `FeedingMethod` / `BreastSide` 与 7 个全可选字段（feedingMethod / breastSide / leftMinutes / rightMinutes / feedingMinutes / food / reaction）及 `reviewNote`，**三处同步**完成：本机规则 `voice-parser.ts`（kindFor 支持配方奶/辅食/吸奶/亲喂与"睡的/醒的"、splitClauses 合并亲喂左右、`parseFeedingFields`、`voiceDraftToEntry` 只在有值时写入以保持旧记录结构），AI 侧 `ai.ts`（提示词加字段与范围约束，`parseAIVoiceDrafts` 逐字段白名单：枚举、奶量 0–400、分钟 0–600、字符串长度，越界丢弃并给「请核对」提示），以及 `workspace-schema.ts` 的 validCare 扩展。`care-records.ts` 补 `describeCare` 新文案与 `summarizeMilk`（吸出量不计入摄入），今日卡片显示"摄入 X ml · 吸出 Y ml"；语音草稿页显示识别摘要与 reviewNote。ROADMAP 指定 5 句全部解析正确：配方奶 14:00/90ml、喂奶 15 分钟、亲喂左 15 右 10 合并一条、辅食南瓜泥 + 吸奶 120ml 两条、睡着/醒来两条且时间仍需确认。新增 `tests/care-fields.test.ts` 6 项、`tests/ai.test.ts` 3 项、`tests/voice-parser.test.ts` 6 项；111 项测试、类型检查、生产构建通过，旧备份导入测试通过。**遗留**：编辑弹窗暂不提供细分字段编辑（草稿页只读核对）；AI.1 的体温用药 / 接种 / 测量部分随 P2.2–P2.4 再做，因此 AI.1 复选框保持未勾选；375/320px 与真机待浏览器实测。
 - P1.4（2026-11-07）：新增 `domain/sleep.ts`——`deriveSleepSegments` 按时间排序配对睡着/醒来（乱序输入也正确）、只有睡着记为进行中、连续两条睡着只保留后一条、带 `durationMinutes` 直接成段；`splitSegmentByDay` 把跨午夜段按自然日切分，`sleepSummaryForDay` 给当天总时长与最长一段；全程不迁移、不改写记录。今日卡片新增「今日睡眠：共 X · 最长一段 Y」。`tests/sleep.test.ts` 7 项覆盖配对、进行中、连续睡着、时长记录、跨午夜（22:30→06:30 拆成 90 / 390 分钟）、空日与时长文案。118 项测试、类型检查、生产构建通过；旧备份导入不受影响。遗留：375/320px 与真机待浏览器实测。
 - P1.5（2026-11-07）：新增 `domain/stats.ts`（`dateRange` / `aggregateByDay`，按天聚合喂奶次数、摄入与吸出奶量、睡眠分钟、尿布次数及湿/脏计数，睡眠复用 P1.4 的段并按自然日切分，空日 `hasData=false`）；新增 `components/TrendChart.vue`，手写 SVG 柱状图，可切换 7/30 天与奶量/睡眠/尿布三个指标，无记录的日子留空而不画成 0，坐标轴文字用 HTML 标签保证 375px 下可读，入口放在回顾页顶部。`tests/stats.test.ts` 4 项覆盖日期区间、聚合与空日、跨午夜（11-05 22:00→11-06 06:00 拆 120/360 分钟）、范围外记录与指标换算。122 项测试、类型检查、生产构建通过。遗留：375/320px 实际渲染待浏览器实测。
+- P1.6（2026-11-07）：**a 深色主题**——`base.css` 加 `:root[data-theme="dark"]` 与 `@media (prefers-color-scheme: dark)` 两套暗色变量覆盖，`lib/theme.ts` + `main.ts` 在启动前应用，家庭页「外观」提供跟随系统 / 浅色 / 深色并存 localStorage `babytime.theme`；**b 夜间模式**——`domain/night.ts` 的 `isNightTime`（22:00–06:00）可测，App 每分钟及切回前台时刷新，TimeView 用 `:deep()` 把今日照护卡片 `order: -1` 置顶，卡片夜间放大按钮并换低亮度暖色背景（文字仍用 `--ink` 保证可读性）；**c 夜间统计**——`stats.ts` 的 `nightSummary` 基于同一份聚合数据给出昨夜醒来次数与最长连续睡眠，今日卡片显示。`tests/night.test.ts` 5 项覆盖主题解析、夜间四个边界（21:59 / 22:00 / 05:59 / 06:00）、夜间窗口、昨夜统计，以及浅色/深色各 6 组文字的 WCAG 对比度全部 ≥ 4.5:1（纯函数计算）。127 项测试、类型检查、生产构建通过。**遗留**：真正的「一键快记」按钮属于 P1.7（批次 5），夜间置顶当前作用于今日照护卡片，P1.7 完成后需接入快记按钮；组件里少量硬编码的浅色错误提示块在深色下仍偏亮，待统一；375/320px 与真机对比度实测待浏览器验证。
 

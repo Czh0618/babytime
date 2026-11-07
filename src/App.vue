@@ -45,6 +45,7 @@ import {
   parseAICaption,
 } from "./domain/ai";
 import { shouldRemindBackup } from "./domain/backup-reminder";
+import { isNightTime } from "./domain/night";
 import { exportRecap, exportRecords } from "./lib/export";
 import type { PreparedMedia } from "./lib/media";
 import type {
@@ -113,6 +114,11 @@ const suggestingId = ref("");
 const aiReady = computed(() => aiAvailable());
 const backupDismissed = ref(false);
 const lastBackupAt = ref<string | null>(null);
+const night = ref(isNightTime(new Date()));
+let nightTimer: ReturnType<typeof setInterval> | undefined;
+function refreshNight() {
+  night.value = isNightTime(new Date());
+}
 const showBackupReminder = computed(() =>
   shouldRemindBackup({
     hasRecords: stats.value.entries > 0 || stats.value.media > 0,
@@ -393,10 +399,14 @@ onMounted(() => {
   refreshAIStatus();
   initializePersistenceStatus();
   refreshBackupState();
+  document.addEventListener("visibilitychange", refreshNight);
+  nightTimer = setInterval(refreshNight, 60_000);
   void model.load();
 });
 onBeforeUnmount(() => {
   window.removeEventListener("hashchange", onHashChange);
+  document.removeEventListener("visibilitychange", refreshNight);
+  clearInterval(nightTimer);
   clearTimeout(toastTimer);
 });
 </script>
@@ -495,6 +505,7 @@ onBeforeUnmount(() => {
           :entries="workspace.entries"
           :media="workspace.media"
           :pending-count="pending.length"
+          :night="night"
           @add="openImport"
           @demo="perform(model.loadDemo, '已加载示例，可随时在家庭页清除。')"
           @review="navigate('inbox')"
@@ -510,6 +521,7 @@ onBeforeUnmount(() => {
             <VoiceEntryCard @start="openVoice" />
             <TodayCareSummary
               :entries="workspace.entries"
+              :night="night"
               @voice="openVoice"
               @open="(entry) => (overlay = { kind: 'detail', id: entry.id })"
             />

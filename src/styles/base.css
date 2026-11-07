@@ -27,6 +27,38 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
+
+/* 深色主题：跟随系统，或家庭页手动指定。两套选择器覆盖「系统暗 + 跟随」与「手动深色」。 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1c1916;
+  --surface: #26221e;
+  --ink: #f2ece3;
+  --muted: #b8ac9c;
+  --line: #3d372f;
+  --tint: #322c25;
+  --accent: #d8b38c;
+  --on-accent: #241d16;
+  --sage: #27352a;
+  --sage-ink: #bcd7c0;
+  --danger: #e08b78;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #1c1916;
+    --surface: #26221e;
+    --ink: #f2ece3;
+    --muted: #b8ac9c;
+    --line: #3d372f;
+    --tint: #322c25;
+    --accent: #d8b38c;
+    --on-accent: #241d16;
+    --sage: #27352a;
+    --sage-ink: #bcd7c0;
+    --danger: #e08b78;
+  }
+}
 *,
 *::before,
 *::after {

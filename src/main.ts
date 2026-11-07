@@ -3,5 +3,7 @@ import App from "./App.vue";
 import "./styles/base.css";
 import "./styles/components.css";
 import "./styles/layout.css";
+import { initializeTheme } from "./lib/theme";
 
+initializeTheme();
 createApp(App).mount("#app");

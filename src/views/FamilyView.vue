@@ -4,6 +4,7 @@ import {
   Download,
   HardDrive,
   LockKeyhole,
+  Moon,
   RefreshCw,
   RotateCcw,
   Save,
@@ -18,6 +19,8 @@ import { dayAge, localDate } from "../domain/date";
 import { aiStatus } from "../lib/ai-service";
 import { describePersistence, persistenceStatus } from "../lib/persistence";
 import { isIOS, isStandalone, migrationCopy } from "../domain/pwa";
+import type { ThemePreference } from "../domain/night";
+import { setThemePreference, themePreference } from "../lib/theme";
 import type { BabyProfile, FamilyStats } from "../types";
 
 const props = withDefaults(
@@ -84,6 +87,12 @@ const aiDescription = computed(() => {
     return `已配置 ${status.model}，当前已暂停。语音整理会继续使用本机规则。`;
   return `已连接 ${status.model}。AI 只接收你写下的文字与素材元信息，原片仍只保存在本机；生成内容一律是待确认草稿。`;
 });
+
+function changeTheme(event: Event) {
+  setThemePreference(
+    (event.target as HTMLSelectElement).value as ThemePreference,
+  );
+}
 
 function saveProfile() {
   notice.text = "";
@@ -247,6 +256,25 @@ function clearData() {
               <Settings2 :size="15" />设置
             </button>
           </div>
+        </div>
+        <div class="setting-row">
+          <Moon :size="20" aria-hidden="true" />
+          <div>
+            <strong>外观</strong>
+            <p class="muted">
+              浅色 / 深色，或跟随系统。夜间会自动降低今天页的亮度。
+            </p>
+          </div>
+          <select
+            class="theme-select"
+            :value="themePreference"
+            aria-label="外观主题"
+            @change="changeTheme"
+          >
+            <option value="system">跟随系统</option>
+            <option value="light">浅色</option>
+            <option value="dark">深色</option>
+          </select>
         </div>
         <div class="setting-row">
           <LockKeyhole :size="20" aria-hidden="true" />
@@ -540,6 +568,17 @@ function clearData() {
 }
 .setting-row .pill {
   flex: none;
+}
+.theme-select {
+  flex: none;
+  max-width: 130px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13px;
 }
 .ai-setting-actions {
   display: flex;

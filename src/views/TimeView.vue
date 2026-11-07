@@ -12,6 +12,7 @@ const props = defineProps<{
   entries: GrowthEntry[];
   media: MediaAsset[];
   pendingCount: number;
+  night?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -76,7 +77,13 @@ function openEntry(entry: GrowthEntry) {
       </button>
     </header>
 
-    <div v-if="$slots.today" class="today-features"><slot name="today" /></div>
+    <div
+      v-if="$slots.today"
+      class="today-features"
+      :data-night="props.night ? 'true' : undefined"
+    >
+      <slot name="today" />
+    </div>
     <section v-else class="memory-banner" aria-label="成长手记寄语">
       <p class="memory-month">{{ monthLabel }}</p>
       <p class="memory-quote">日子慢慢过，<br />你在悄悄长大。</p>
@@ -213,6 +220,10 @@ function openEntry(entry: GrowthEntry) {
   display: grid;
   gap: 26px;
   min-width: 0;
+}
+/* 夜间把常用照护按钮置顶；slot 内容来自父组件，需要 :deep。 */
+.today-features[data-night="true"] > :deep(.care-summary) {
+  order: -1;
 }
 .page-topline,
 .section-heading-row,

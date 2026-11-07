@@ -10,18 +10,29 @@ import {
   formatMinutes,
   sleepSummaryForDay,
 } from "../domain/sleep";
-const props = defineProps<{ entries: GrowthEntry[] }>();
+import { nightSummary } from "../domain/stats";
+const props = withDefaults(
+  defineProps<{ entries: GrowthEntry[]; night?: boolean }>(),
+  { night: false },
+);
 const emit = defineEmits<{ voice: []; open: [entry: GrowthEntry] }>();
 const categories = [
   { kind: "feeding", title: "喂奶", icon: Milk },
   { kind: "sleep", title: "睡眠", icon: Moon },
   { kind: "diaper", title: "换尿布", icon: Baby },
 ] as const;
+const now = ref(Date.now());
 const milk = computed(() => summarizeMilk(props.entries));
 const sleep = computed(() =>
   sleepSummaryForDay(deriveSleepSegments(props.entries), localDate()),
 );
-const now = ref(Date.now());
+const nightly = computed(() =>
+  nightSummary(
+    props.entries,
+    deriveSleepSegments(props.entries),
+    new Date(now.value),
+  ),
+);
 const tick = () => (now.value = Date.now());
 const timer = setInterval(tick, 60_000);
 // 后台标签页的定时器会被浏览器节流，回到前台时立刻校准一次。
@@ -58,7 +69,11 @@ const latest = computed(() => {
 </script>
 
 <template>
-  <section aria-labelledby="today-care-heading">
+  <section
+    class="care-summary"
+    aria-labelledby="today-care-heading"
+    :class="{ 'night-mode': props.night }"
+  >
     <div class="care-summary-heading">
       <h2 id="today-care-heading">今天的照护</h2>
       <span>距上次记录</span>
@@ -103,6 +118,13 @@ const latest = computed(() => {
       今日睡眠：共 {{ formatMinutes(sleep.totalMinutes) }} · 最长一段
       {{ formatMinutes(sleep.longestMinutes) }}
     </p>
+    <p
+      v-if="nightly.wakeCount || nightly.longestSleepMinutes"
+      class="milk-summary"
+    >
+      昨夜：醒来 {{ nightly.wakeCount }} 次 · 最长连续睡眠
+      {{ formatMinutes(nightly.longestSleepMinutes) }}
+    </p>
   </section>
 </template>
 
@@ -112,6 +134,18 @@ const latest = computed(() => {
   color: var(--muted);
   font-size: var(--font-xs);
   line-height: 1.6;
+}
+/* 夜间：放大常用照护按钮，背景换成低亮度暖色；文字仍保持高对比不牺牲可读性。 */
+.night-mode .care-summary-item {
+  min-height: 140px;
+  padding: 18px 14px;
+  background: var(--tint);
+}
+.night-mode .care-summary-item strong {
+  font-size: 22px;
+}
+.night-mode .care-summary-heading h2 {
+  color: var(--muted);
 }
 .care-summary-heading {
   display: flex;
@@ -174,6 +208,10 @@ const latest = computed(() => {
   .care-summary-label {
     font-size: var(--font-xs);
     gap: 4px;
+  }
+  .night-mode .care-summary-item {
+    min-height: 128px;
+    padding: 15px 10px;
   }
 }
 </style>
