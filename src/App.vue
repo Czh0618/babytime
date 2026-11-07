@@ -24,6 +24,7 @@ import VoiceEntryCard from "./components/VoiceEntryCard.vue";
 import AiSettingsDialog from "./components/AiSettingsDialog.vue";
 import BackupReminder from "./components/BackupReminder.vue";
 import QuickLogCard from "./components/QuickLogCard.vue";
+import FirstRunGuide from "./components/FirstRunGuide.vue";
 import TodayCareSummary from "./components/TodayCareSummary.vue";
 import AgeGuideCard from "./components/AgeGuideCard.vue";
 import type { ParentActivity } from "./data/age-guides";
@@ -36,6 +37,11 @@ import {
   type TimerSide,
 } from "./domain/timer";
 import { voiceDraftToEntry } from "./domain/voice-parser";
+import {
+  quickActionLabel,
+  quickCareDraft,
+  type QuickKind,
+} from "./domain/quick";
 import {
   clearActiveTimer,
   readActiveTimer,
@@ -259,6 +265,56 @@ function cancelTimer() {
   say("已放弃这次计时，没有生成记录。");
 }
 
+function readFlag(key: string) {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeFlag(key: string) {
+  try {
+    localStorage.setItem(key, "1");
+  } catch {
+    // 隐私模式下每次都显示引导，不影响功能。
+  }
+}
+
+const recentQuick = ref<{ id: string; label: string; at: string } | null>(null);
+let quickTimer: ReturnType<typeof setTimeout> | undefined;
+const guideSeen = ref(readFlag("babytime.guideSeen"));
+const showFirstRun = computed(
+  () =>
+    !loading.value &&
+    !workspace.value.entries.length &&
+    !hasDemo.value &&
+    !guideSeen.value,
+);
+
+/** 一键快记：默认当前时间，记完可以立刻撤销。 */
+function quickLog(kind: QuickKind) {
+  const draft = quickCareDraft(kind, new Date());
+  void perform(async () => {
+    const id = await model.addQuickEntry(draft);
+    recentQuick.value = { id, label: quickActionLabel(kind), at: draft.capturedAt };
+    clearTimeout(quickTimer);
+    quickTimer = setTimeout(() => (recentQuick.value = null), 12_000);
+  });
+}
+
+function undoQuick(id: string) {
+  const entry = workspace.value.entries.find((item) => item.id === id);
+  recentQuick.value = null;
+  clearTimeout(quickTimer);
+  if (entry) void perform(() => model.deleteEntry(entry), "已撤销这条快记。");
+}
+
+function dismissGuide() {
+  guideSeen.value = true;
+  writeFlag("babytime.guideSeen");
+}
+
 function openActivity(activity: ParentActivity) {
   formError.value = "";
   overlay.value = {
@@ -460,6 +516,7 @@ onBeforeUnmount(() => {
   document.removeEventListener("visibilitychange", refreshNight);
   clearInterval(nightTimer);
   clearTimeout(toastTimer);
+  clearTimeout(quickTimer);
 });
 </script>
 
@@ -565,6 +622,12 @@ onBeforeUnmount(() => {
           @open="(entry) => (overlay = { kind: 'detail', id: entry.id })"
         >
           <template #today>
+            <FirstRunGuide
+              v-if="showFirstRun"
+              @voice="openVoice"
+              @demo="perform(model.loadDemo, '已加载示例，可随时在家庭页清除。')"
+              @dismiss="dismissGuide"
+            />
             <BackupReminder
               v-if="showBackupReminder"
               @export="downloadBackup"
@@ -573,7 +636,10 @@ onBeforeUnmount(() => {
             <VoiceEntryCard @start="openVoice" />
             <QuickLogCard
               :timer="activeTimer"
+              :recent="recentQuick"
               :night="night"
+              @quick="quickLog"
+              @undo="undoQuick"
               @start="startTimer"
               @switch="switchTimer"
               @finish="finishTimer"

@@ -9,13 +9,20 @@ import {
   type TimerKind,
   type TimerSide,
 } from "../domain/timer";
+import { QUICK_ACTIONS, type QuickKind } from "../domain/quick";
 import { formatTime } from "../domain/date";
 
 const props = withDefaults(
-  defineProps<{ timer: ActiveTimer | null; night?: boolean }>(),
-  { night: false },
+  defineProps<{
+    timer: ActiveTimer | null;
+    recent?: { id: string; label: string; at: string } | null;
+    night?: boolean;
+  }>(),
+  { night: false, recent: null },
 );
 const emit = defineEmits<{
+  quick: [kind: QuickKind];
+  undo: [id: string];
   start: [kind: TimerKind, side?: TimerSide];
   switch: [side: TimerSide];
   finish: [];
@@ -70,56 +77,84 @@ const otherSide = computed<TimerSide>(() =>
 <template>
   <section class="quick-log" :class="{ 'night-mode': props.night }">
     <div class="quick-head">
-      <h2>计时</h2>
-      <span v-if="!timer">记不准时长时，用计时</span>
+      <h2>记一次</h2>
+      <span>默认记到现在</span>
     </div>
-    <div v-if="!timer" class="timer-starts">
+    <div class="quick-actions">
       <button
-        class="button button-secondary"
+        v-for="action in QUICK_ACTIONS"
+        :key="action.id"
+        class="quick-button"
         type="button"
-        @click="emit('start', 'feeding', 'left')"
+        @click="emit('quick', action.id)"
       >
-        <Play :size="15" aria-hidden="true" />亲喂 · 左
-      </button>
-      <button
-        class="button button-secondary"
-        type="button"
-        @click="emit('start', 'feeding', 'right')"
-      >
-        <Play :size="15" aria-hidden="true" />亲喂 · 右
-      </button>
-      <button
-        class="button button-secondary"
-        type="button"
-        @click="emit('start', 'sleep')"
-      >
-        <Moon :size="15" aria-hidden="true" />开始睡觉
+        {{ action.label }}
       </button>
     </div>
-    <div v-else class="timer-running" role="status" aria-live="polite">
-      <p class="timer-clock">{{ clock }}</p>
-      <p class="timer-meta">{{ runningLabel }}</p>
-      <div class="timer-actions">
+    <p v-if="recent" class="quick-undo" role="status">
+      已记下 {{ recent.label }} · {{ formatTime(recent.at) }}
+      <button class="link-button" type="button" @click="emit('undo', recent.id)">
+        撤销
+      </button>
+    </p>
+
+    <div class="timer-block">
+      <div class="quick-head">
+        <h2>计时</h2>
+        <span v-if="!timer">记不准时长时，用计时</span>
+      </div>
+      <div v-if="!timer" class="timer-starts">
         <button
-          v-if="timer.kind === 'feeding'"
           class="button button-secondary"
           type="button"
-          @click="emit('switch', otherSide)"
+          @click="emit('start', 'feeding', 'left')"
         >
-          换到{{ otherSide === 'right' ? '右' : '左' }}边
+          <Play :size="15" aria-hidden="true" />亲喂 · 左
         </button>
         <button
-          class="button button-primary"
+          class="button button-secondary"
           type="button"
-          @click="emit('finish')"
+          @click="emit('start', 'feeding', 'right')"
         >
-          <Square :size="14" aria-hidden="true" />结束并记录
+          <Play :size="15" aria-hidden="true" />亲喂 · 右
         </button>
-        <button class="button button-ghost" type="button" @click="emit('cancel')">
-          放弃
+        <button
+          class="button button-secondary"
+          type="button"
+          @click="emit('start', 'sleep')"
+        >
+          <Moon :size="15" aria-hidden="true" />开始睡觉
         </button>
       </div>
-      <p class="timer-hint">结束时先给你一条草稿，确认后才会存档。</p>
+      <div v-else class="timer-running" role="status" aria-live="polite">
+        <p class="timer-clock">{{ clock }}</p>
+        <p class="timer-meta">{{ runningLabel }}</p>
+        <div class="timer-actions">
+          <button
+            v-if="timer.kind === 'feeding'"
+            class="button button-secondary"
+            type="button"
+            @click="emit('switch', otherSide)"
+          >
+            换到{{ otherSide === 'right' ? '右' : '左' }}边
+          </button>
+          <button
+            class="button button-primary"
+            type="button"
+            @click="emit('finish')"
+          >
+            <Square :size="14" aria-hidden="true" />结束并记录
+          </button>
+          <button
+            class="button button-ghost"
+            type="button"
+            @click="emit('cancel')"
+          >
+            放弃
+          </button>
+        </div>
+        <p class="timer-hint">结束时先给你一条草稿，确认后才会存档。</p>
+      </div>
     </div>
   </section>
 </template>
@@ -136,7 +171,7 @@ const otherSide = computed<TimerSide>(() =>
 }
 .quick-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 10px;
 }
@@ -148,6 +183,48 @@ const otherSide = computed<TimerSide>(() =>
 .quick-head span {
   color: var(--muted);
   font-size: var(--font-xs);
+}
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.quick-button {
+  min-height: 56px;
+  padding: 8px 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--tint);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.quick-button:active {
+  background: var(--line);
+}
+.quick-undo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+.link-button {
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--font-xs);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.timer-block {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 .timer-starts {
   display: flex;
@@ -191,6 +268,10 @@ const otherSide = computed<TimerSide>(() =>
   color: var(--muted);
   font-size: 12px;
 }
+.night-mode .quick-button {
+  min-height: 68px;
+  font-size: 17px;
+}
 .night-mode .timer-starts .button,
 .night-mode .timer-actions .button {
   min-height: 54px;
@@ -199,6 +280,13 @@ const otherSide = computed<TimerSide>(() =>
 @media (max-width: 400px) {
   .quick-log {
     padding: 14px 12px;
+  }
+  .quick-actions {
+    gap: 6px;
+  }
+  .quick-button {
+    min-height: 52px;
+    font-size: 14px;
   }
   .timer-starts .button {
     min-width: 88px;

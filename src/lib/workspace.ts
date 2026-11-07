@@ -282,6 +282,22 @@ export function useWorkspace() {
     });
   }
 
+  /** 一键快记：直接落一条只含确定事实的记录，返回 id 供界面撤销。 */
+  async function addQuickEntry(draft: EntryDraft): Promise<string> {
+    const id = createId();
+    await update((next) => {
+      const error = validateEntry(draft);
+      if (error) throw new Error(error);
+      next.entries.push({
+        ...draft,
+        title: draft.title.trim(),
+        id,
+        favorite: false,
+      });
+    });
+    return id;
+  }
+
   async function saveVoiceEntries(drafts: VoiceDraft[], batchId: string) {
     let count = 0;
     await update((next) => {
@@ -395,6 +411,7 @@ export function useWorkspace() {
     load,
     importFiles,
     saveEntry,
+    addQuickEntry,
     saveVoiceEntries,
     toggleFavorite,
     dismiss,
