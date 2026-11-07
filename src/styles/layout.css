@@ -279,3 +279,30 @@
     font-size: 23px;
   }
 }
+
+/* 就诊摘要打印：只留摘要本身，其余界面不进入纸张。 */
+@media print {
+  .sidebar,
+  .content,
+  .toast {
+    display: none !important;
+  }
+  .visit-sheet {
+    position: static !important;
+    inset: auto !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #000;
+  }
+  .visit-sheet .visit-actions {
+    display: none !important;
+  }
+  .visit-sheet .visit-table th,
+  .visit-sheet .visit-table td {
+    border-color: #ccc;
+  }
+  @page {
+    margin: 14mm;
+  }
+}

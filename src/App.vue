@@ -29,6 +29,7 @@ import QuickLogCard from "./components/QuickLogCard.vue";
 import FirstRunGuide from "./components/FirstRunGuide.vue";
 import TodayCareSummary from "./components/TodayCareSummary.vue";
 import AgeGuideCard from "./components/AgeGuideCard.vue";
+import VisitSummary from "./components/VisitSummary.vue";
 import type { ParentActivity } from "./data/age-guides";
 import type { VoiceDraft } from "./domain/care-types";
 import {
@@ -72,6 +73,8 @@ import { measurementDraft } from "./domain/growth";
 import { toggleMilestone } from "./domain/milestones";
 import { buildVaccineIcs, icsFileName } from "./lib/ics";
 import { downloadBlob } from "./lib/export";
+import { buildVisitSummary } from "./domain/summary";
+import { buildEntriesCsv } from "./lib/csv";
 import { isNightTime } from "./domain/night";
 import { exportRecap, exportRecords } from "./lib/export";
 import type { PreparedMedia } from "./lib/media";
@@ -545,6 +548,31 @@ function toggleMilestoneKey(key: string) {
   void perform(() => model.saveMilestones(next));
 }
 
+const visitOpen = ref(false);
+const visitSummary = computed(() =>
+  buildVisitSummary(
+    workspace.value.entries,
+    workspace.value.baby,
+    workspace.value.vaccinations ?? [],
+    workspace.value.vaccinePlan ?? defaultVaccinePlan(),
+  ),
+);
+
+function printVisit() {
+  window.print();
+}
+
+function exportCsv() {
+  const name = workspace.value.baby.name || "宝宝";
+  downloadBlob(
+    new Blob([buildEntriesCsv(workspace.value.entries)], {
+      type: "text/csv;charset=utf-8",
+    }),
+    `${name}-照护记录.csv`,
+  );
+  say("已导出 CSV，可用 Excel 打开。");
+}
+
 async function confirmAction() {
   const current = overlay.value;
   if (
@@ -757,6 +785,8 @@ onBeforeUnmount(() => {
           @remove-record="removeVaccination"
           @calendar="downloadVaccineEvent"
           @measure="saveMeasurement"
+          @visit="visitOpen = true"
+          @csv="exportCsv"
         />
         <FamilyView
           v-else
@@ -777,6 +807,14 @@ onBeforeUnmount(() => {
         />
       </template>
     </main>
+    <VisitSummary
+      v-if="visitOpen"
+      :baby-name="workspace.baby.name"
+      :summary="visitSummary"
+      @close="visitOpen = false"
+      @print="printVisit"
+      @csv="exportCsv"
+    />
     <ImportDialog
       v-if="overlay?.kind === 'import'"
       :busy="busy"

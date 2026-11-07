@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import { CalendarPlus, Check, Plus, Trash2 } from "@lucide/vue";
+import { CalendarPlus, Check, FileDown, Plus, Stethoscope, Trash2 } from "@lucide/vue";
 import type {
   BabyProfile,
   GrowthEntry,
@@ -40,6 +40,8 @@ const emit = defineEmits<{
   removeRecord: [id: string];
   calendar: [task: VaccineTask];
   measure: [values: { weightKg?: number; heightCm?: number; headCm?: number }];
+  visit: [];
+  csv: [];
 }>();
 
 const today = localDate();
@@ -176,6 +178,18 @@ function toggleSpecial(event: Event) {
         <p class="muted page-lede">
           接种计划按免疫程序推算，记录只存在本机，随备份一起走。
         </p>
+      </div>
+      <div class="health-tools">
+        <button
+          class="button button-secondary"
+          type="button"
+          @click="emit('visit')"
+        >
+          <Stethoscope :size="16" aria-hidden="true" />就诊摘要
+        </button>
+        <button class="button button-ghost" type="button" @click="emit('csv')">
+          <FileDown :size="16" aria-hidden="true" />导出 CSV
+        </button>
       </div>
     </div>
 
@@ -534,6 +548,18 @@ function toggleSpecial(event: Event) {
 .health-page {
   display: grid;
   gap: 22px;
+}
+.health-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.page-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 .vaccine-card,
 .custom-card,
