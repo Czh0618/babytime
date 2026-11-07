@@ -166,7 +166,7 @@
   - 后端：放在现有 ECS，单文件 Node 服务 + SQLite（或 JSON 文件），用 Nginx 反代；部署脚本 `scripts/deploy.sh` 增加对应步骤。
   - 离线：本地优先，联网后增量推拉（`since=updatedAt`）。
   - 回滚：关闭同步开关即回到纯本机，本地数据不受影响。
-- [ ] **P4.2 前端字段迁移：** 给已有记录补 `updatedAt`（取 `capturedAt`），删除改为写墓碑。可以先于后端单独上线。
+- [x] **P4.2 前端字段迁移：** 给已有记录补 `updatedAt`（取 `capturedAt`），删除改为写墓碑。可以先于后端单独上线。
 - [ ] **P4.3 同步服务与客户端：** 按 SYNC.md 实现，并用两个浏览器 profile 实测同时编辑和删除。
 - [ ] **P4.4 隐私说明更新：** 家庭页和 README 写明“结构化记录会存到你自己的服务器”。
 
@@ -288,4 +288,4 @@
 - P1.7（2026-11-07）：新增 `domain/quick.ts`（`QUICK_ACTIONS` 四个动作、`quickCareDraft` 只写确定事实、不填数量时长）与 `workspace.addQuickEntry`（返回新记录 id 供撤销）。`QuickLogCard.vue` 顶部加「记一次」四个 44px+ 按钮（喂奶 / 尿布 / 睡着 / 醒来），点一下按当前时间落库，12 秒内显示「已记下 … · 撤销」，撤销即删除该条；夜间模式下按钮放大。首次进入（无记录、无示例、未点过「不用引导」）显示 `FirstRunGuide.vue`，引导「先说一句」或「先看看示例」，选择记在 localStorage `babytime.guideSeen`。示例数据本来就是手动加载，这次在引导卡里也给了入口。`tests/quick.test.ts` 3 项：四个动作的照护类型与标题、不填数字且通过 `validateEntry`、按钮文案固定。145 项测试、类型检查、生产构建通过；未改数据结构。遗留：快记按钮的触控手感与撤销计时待真机实测。
 - P1.3（2026-11-07）：新增 `domain/timer.ts`（`startTimer` / `parseActiveTimer` / `elapsedSeconds` / `feedingSideMinutes` / `switchTimerSide` / `timerDraft`）与 `lib/timer.ts`（localStorage `babytime.activeTimer` 读写，隐私模式写不进也不影响本次会话）。今天页新增 `QuickLogCard.vue` 的计时区：亲喂（左/右）、开始睡觉；计时中每秒刷新，亲喂可换边并累计两侧分钟，结束生成草稿后打开现有编辑确认流程（不直接落库），放弃则清空。刷新或系统杀掉页面后重新打开，读回开始时间继续算原时长。`tests/timer.test.ts` 8 项：损坏状态回退、写入后原样恢复、按侧累计与换边、睡眠总时长含恢复、结束生成草稿（记录时间取开始那一刻、sleepState=duration）、不足一分钟与时钟回拨按 1 分钟记、显示格式。135 项测试、类型检查、生产构建通过；未改数据结构，旧备份导入不受影响。遗留：真机后台杀进程后的恢复、375/320px 布局待浏览器实测。
 - P1.6（2026-11-07）：**a 深色主题**——`base.css` 加 `:root[data-theme="dark"]` 与 `@media (prefers-color-scheme: dark)` 两套暗色变量覆盖，`lib/theme.ts` + `main.ts` 在启动前应用，家庭页「外观」提供跟随系统 / 浅色 / 深色并存 localStorage `babytime.theme`；**b 夜间模式**——`domain/night.ts` 的 `isNightTime`（22:00–06:00）可测，App 每分钟及切回前台时刷新，TimeView 用 `:deep()` 把今日照护卡片 `order: -1` 置顶，卡片夜间放大按钮并换低亮度暖色背景（文字仍用 `--ink` 保证可读性）；**c 夜间统计**——`stats.ts` 的 `nightSummary` 基于同一份聚合数据给出昨夜醒来次数与最长连续睡眠，今日卡片显示。`tests/night.test.ts` 5 项覆盖主题解析、夜间四个边界（21:59 / 22:00 / 05:59 / 06:00）、夜间窗口、昨夜统计，以及浅色/深色各 6 组文字的 WCAG 对比度全部 ≥ 4.5:1（纯函数计算）。127 项测试、类型检查、生产构建通过。**遗留**：真正的「一键快记」按钮属于 P1.7（批次 5），夜间置顶当前作用于今日照护卡片，P1.7 完成后需接入快记按钮；组件里少量硬编码的浅色错误提示块在深色下仍偏亮，待统一；375/320px 与真机对比度实测待浏览器验证。
-
+- P4.2（2026-11-07）：用户确认 SYNC.md 第 13 节（先只做 P4.2；P4.3 用 `node:sqlite`、IP 证书 https，其余接受默认方案）。新增 `domain/sync-meta.ts`：`migrateSyncMeta` 在读入本机数据与导入备份时给记录 / 接种 / 回顾 / 素材元信息补 `updatedAt`（取 `capturedAt` 或 `createdAt`，转 UTC ISO，解析不了取迁移时间）和 `deviceId`（localStorage `babytime.deviceId`），幂等；`stampChanges` 挂在 `update()` 和「连原片删除」两条写入路径上，对比前后工作区，自动给新增或改过的条目盖章、给消失的条目写墓碑、给重新出现的条目撤销墓碑，资料与疫苗计划分别记修改时间，示例数据删除不写墓碑。**和 SYNC.md 原稿的两处偏差（已回写文档）**：① 墓碑单独存进 `workspace.tombstones`，记录本身不加 `deletedAt`，60 多处读取 `entries` 的代码一行不用改；② `schemaVersion` 保持 1，避免回滚后旧版前端读不了数据。`workspace-schema.ts` 校验可选的同步字段和墓碑结构。`tests/sync-meta.test.ts` 6 项：迁移取值与幂等、只给改动盖章、删除写墓碑且回顾随之更新、里程碑墓碑与撤销、示例不写墓碑及资料/计划时间、旧备份照常导入 + 新备份往返 + 5 种坏字段被拒。215 项测试、类型检查、生产构建通过。遗留：墓碑只增不减，等 P4.3 推送成功后再清理；里程碑没有逐键修改时间；示例数据也会被盖章，P4.3 推送时要排除。

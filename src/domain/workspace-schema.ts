@@ -119,13 +119,33 @@ function validCare(value: unknown): boolean {
   );
 }
 
-function validItems<T extends { id: string }>(
+/** 同步元信息（P4.2）对所有按条同步的列表都是可选的。 */
+const validSyncMeta = (item: { updatedAt?: unknown; deviceId?: unknown }) =>
+  optionalString(item.updatedAt) && optionalString(item.deviceId);
+
+function validTombstones(value: unknown): boolean {
+  if (value === undefined) return true;
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        item && typeof item === "object" &&
+        ["entry", "vaccination", "recap", "media", "milestone"].includes(item.kind) &&
+        typeof item.id === "string" && typeof item.deletedAt === "string" &&
+        typeof item.deviceId === "string",
+    )
+  );
+}
+
+function validItems<T extends { id: string; updatedAt?: unknown; deviceId?: unknown }>(
   items: T[],
   validate: (item: T) => boolean,
+  syncable = true,
 ): boolean {
   const seen = new Set<string>();
   return items.every((item) => {
     if (!item.id.trim() || seen.has(item.id) || !validate(item)) return false;
+    if (syncable && !validSyncMeta(item)) return false;
     seen.add(item.id);
     return true;
   });
@@ -168,7 +188,8 @@ function validBackupWorkspace(workspace: Workspace): boolean {
       typeof item.note === "string" && typeof item.capturedAt === "string" &&
       ["demo", "upload"].includes(item.origin) &&
       ["pending", "confirmed", "dismissed"].includes(item.status) &&
-      optionalString(item.suggestion) && optionalNumber(item.start) && optionalNumber(item.end)) &&
+      optionalString(item.suggestion) && optionalNumber(item.start) && optionalNumber(item.end),
+      false) &&
     validItems(workspace.recaps, (item) =>
       typeof item.title === "string" && typeof item.dateFrom === "string" &&
       typeof item.dateTo === "string" && typeof item.createdAt === "string" &&
@@ -181,6 +202,9 @@ function validBackupWorkspace(workspace: Workspace): boolean {
         optionalString(item.name) && optionalString(item.clinic) &&
         optionalString(item.lot) && optionalString(item.inputId))) &&
     (workspace.vaccinePlan === undefined || validVaccinePlan(workspace.vaccinePlan)) &&
+    optionalString(workspace.babyUpdatedAt) &&
+    optionalString(workspace.vaccinePlanUpdatedAt) &&
+    validTombstones(workspace.tombstones) &&
     (workspace.milestones === undefined ||
       (typeof workspace.milestones === "object" &&
         !Array.isArray(workspace.milestones) &&

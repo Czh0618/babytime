@@ -40,6 +40,23 @@ import { decodeBackup } from "./backup";
 import { addVoiceEntries } from "../domain/care-records";
 import type { VoiceDraft } from "../domain/care-types";
 import type { AICaption } from "../domain/ai";
+import { migrateSyncMeta, stampChanges } from "../domain/sync-meta";
+
+let cachedDeviceId: string | undefined;
+/** 本机设备标识，存 localStorage；隐私模式写不进时本次会话内保持不变。 */
+function deviceId(): string {
+  if (cachedDeviceId) return cachedDeviceId;
+  try {
+    cachedDeviceId = localStorage.getItem("babytime.deviceId") ?? undefined;
+    if (!cachedDeviceId) {
+      cachedDeviceId = createId();
+      localStorage.setItem("babytime.deviceId", cachedDeviceId);
+    }
+  } catch {
+    cachedDeviceId ??= createId();
+  }
+  return cachedDeviceId;
+}
 
 /** 旧数据没有疫苗字段；读入时补默认值，界面就不用到处判空。 */
 function normalizeVaccines(target: Workspace) {
@@ -105,6 +122,7 @@ export function useWorkspace() {
           throw new Error("本机数据格式暂不支持，原有内容未被修改。");
         workspace.value = saved;
         normalizeVaccines(workspace.value);
+        migrateSyncMeta(workspace.value, deviceId());
       } else await writeWorkspace(workspace.value); // 首次进入为空白工作区，示例由用户主动加载
       await attachMedia(workspace.value);
     } catch (error) {
@@ -121,6 +139,7 @@ export function useWorkspace() {
   async function restore(file: File) {
     const { workspace: next, mediaFiles } = decodeBackup(await file.text());
     normalizeVaccines(next);
+    migrateSyncMeta(next, deviceId());
     const action = writes
       .catch(() => {})
       .then(async () => {
@@ -151,6 +170,7 @@ export function useWorkspace() {
         if (storageError.value) throw new Error(storageError.value);
         const next: Workspace = JSON.parse(JSON.stringify(workspace.value));
         change(next);
+        stampChanges(workspace.value, next, deviceId());
         await writeWorkspaceAndMedia(next, mediaFiles);
         workspace.value = next;
       });
@@ -357,6 +377,7 @@ export function useWorkspace() {
         next.candidates = next.candidates.filter(
           (item) => item.mediaId !== mediaId,
         );
+        stampChanges(workspace.value, next, deviceId());
         await removeMediaAndWorkspace(mediaId, next);
         workspace.value = next;
         releaseUrls(removed);

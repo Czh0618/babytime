@@ -17,7 +17,26 @@ export interface DemoProfileRestorePoint {
   demoBaby: BabyProfile;
 }
 
-export interface MediaAsset {
+/** 多设备同步元信息（P4.2）：旧数据没有，读入时由 migrateSyncMeta 补齐。 */
+export interface SyncMeta {
+  /** 最后修改时间，ISO（UTC）。 */
+  updatedAt?: string;
+  /** 最后一次写入的设备，只用于排查，不参与冲突判断。 */
+  deviceId?: string;
+}
+
+export type SyncKind = "entry" | "vaccination" | "recap" | "media" | "milestone";
+
+/** 删除墓碑：单独存放，界面读取的列表里永远只有未删除的条目。 */
+export interface Tombstone {
+  kind: SyncKind;
+  /** 条目 id；里程碑为 `guideId:index`。 */
+  id: string;
+  deletedAt: string;
+  deviceId: string;
+}
+
+export interface MediaAsset extends SyncMeta {
   id: string;
   kind: "image" | "video";
   name: string;
@@ -58,7 +77,7 @@ export interface EntryDraft {
   activityId?: string;
 }
 
-export interface GrowthEntry extends EntryDraft {
+export interface GrowthEntry extends EntryDraft, SyncMeta {
   id: string;
   mediaId?: string;
   candidateId?: string;
@@ -73,12 +92,12 @@ export interface RecapDraft {
   dateTo: string;
 }
 
-export interface Recap extends RecapDraft {
+export interface Recap extends RecapDraft, SyncMeta {
   id: string;
   createdAt: string;
 }
 
-export interface VaccinationRecord {
+export interface VaccinationRecord extends SyncMeta {
   id: string;
   /** 程序内缩写；自费疫苗用 "custom"。 */
   code: string;
@@ -115,6 +134,11 @@ export interface Workspace {
   vaccinePlan?: VaccinePlan;
   /** 里程碑打勾：键 `guideId:index` → 达成日期。 */
   milestones?: Record<string, string>;
+  /** 同步用：宝宝资料与疫苗计划各自的最后修改时间，缺失表示迁移后未改过。 */
+  babyUpdatedAt?: string;
+  vaccinePlanUpdatedAt?: string;
+  /** 同步用：已删除条目的墓碑。 */
+  tombstones?: Tombstone[];
 }
 
 export interface FamilyStats {
