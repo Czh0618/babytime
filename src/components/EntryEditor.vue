@@ -15,6 +15,7 @@ import {
 } from "../domain/care-types";
 import { VACCINES_2026 } from "../data/vaccines-2026";
 import { prepareMediaFile, type PreparedMedia } from "../lib/media";
+import { clipAction } from "../domain/clip";
 import {
   ENTRY_TAGS,
   type Candidate,
@@ -203,20 +204,18 @@ function pickVaccine(code: string) {
   draft.care.vaccineCode = spec?.code;
   draft.care.vaccineName = spec?.name;
 }
-function boundPlayback() {
+/** 片段边界与记录详情共用同一套判断，避免两处播放行为不一致。 */
+function handleClip(event: "play" | "timeupdate") {
   const player = video.value;
-  if (player && draft.end !== undefined && player.currentTime >= draft.end)
-    player.pause();
-}
-function startPlayback() {
-  const player = video.value;
-  if (
-    player &&
-    draft.start !== undefined &&
-    (player.currentTime < draft.start ||
-      (draft.end !== undefined && player.currentTime >= draft.end))
-  )
-    player.currentTime = draft.start;
+  if (!player) return;
+  const action = clipAction(
+    player.currentTime,
+    { start: draft.start, end: draft.end },
+    event,
+  );
+  if (!action) return;
+  if ("seekTo" in action) player.currentTime = action.seekTo;
+  else player.pause();
 }
 </script>
 
@@ -243,8 +242,8 @@ function startPlayback() {
       controls
       playsinline
       preload="metadata"
-      @play="startPlayback"
-      @timeupdate="boundPlayback"
+      @play="handleClip('play')"
+      @timeupdate="handleClip('timeupdate')"
     />
     <MediaTile
       v-else-if="currentMedia"

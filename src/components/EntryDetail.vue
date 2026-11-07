@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { Heart, Pencil, Trash2 } from "@lucide/vue";
 import ModalDialog from "./ModalDialog.vue";
 import MediaTile from "./MediaTile.vue";
@@ -7,8 +8,23 @@ import type { GrowthEntry, MediaAsset } from "../types";
 import { formatDate, formatTime } from "../domain/date";
 import { describeCare } from "../domain/care-records";
 import { CARE_LABELS } from "../domain/care-types";
-defineProps<{ entry: GrowthEntry; media?: MediaAsset; busy: boolean }>();
+import { clipAction } from "../domain/clip";
+const props = defineProps<{ entry: GrowthEntry; media?: MediaAsset; busy: boolean }>();
 const emit = defineEmits<{ close: []; edit: []; remove: []; favorite: [] }>();
+const video = ref<HTMLVideoElement>();
+
+function handleClip(event: "metadata" | "play" | "timeupdate") {
+  const player = video.value;
+  if (!player) return;
+  const action = clipAction(
+    player.currentTime,
+    { start: props.entry.start, end: props.entry.end },
+    event,
+  );
+  if (!action) return;
+  if ("seekTo" in action) player.currentTime = action.seekTo;
+  else player.pause();
+}
 </script>
 
 <template>
@@ -29,11 +45,17 @@ const emit = defineEmits<{ close: []; edit: []; remove: []; favorite: [] }>();
     </div>
     <video
       v-else-if="media?.kind === 'video' && media.url && media.previewable"
+      ref="video"
       class="full-media"
-      :src="`${media.url}#t=${entry.start || 0}${entry.end ? ',' + entry.end : ''}`"
+      :src="media.url"
+      :poster="media.thumbnailUrl || undefined"
       controls
       playsinline
       preload="metadata"
+      @loadedmetadata="handleClip('metadata')"
+      @loadeddata="handleClip('metadata')"
+      @play="handleClip('play')"
+      @timeupdate="handleClip('timeupdate')"
     />
     <div
       v-else-if="media?.kind === 'image' && media.url && media.previewable"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import {
   ArrowDown,
   ArrowUp,
@@ -56,21 +56,31 @@ const draftDismissed = ref(false);
 /** 上个月的回顾草稿：按收藏与里程碑预选，确认后才保存。 */
 const monthlyDraft = computed(() => suggestMonthlyRecap(props.entries));
 
+const aiBusy = ref(false);
+const aiError = ref("");
+/** AI 建议只停在草稿卡片上，点「用它生成」才带进新建表单。 */
+const aiTitleText = ref("");
+const aiNote = ref("");
+let aiController: AbortController | null = null;
+
+const draftTitle = computed(
+  () => aiTitleText.value || monthlyDraft.value?.title || "",
+);
+
 async function useMonthlyDraft() {
   const draft = monthlyDraft.value;
   if (!draft) return;
-  title.value = draft.title;
+  title.value = draftTitle.value;
   dateFrom.value = draft.dateFrom;
   dateTo.value = draft.dateTo;
   creating.value = true;
   // 等日期 watch 完成筛选后再设置选中的条目。
   await nextTick();
   selected.value = draft.entryIds;
-  notice.value = "已按收藏和里程碑预选上个月的瞬间，可以增减后再保存。";
+  notice.value = aiTitleText.value
+    ? "已带上 AI 建议的标题，可以按收藏和里程碑预选的瞬间再增减。"
+    : "已按收藏和里程碑预选上个月的瞬间，可以增减后再保存。";
 }
-
-const aiBusy = ref(false);
-const aiError = ref("");
 
 /** 用 AI 给这份草稿起标题与一句短文；只发标题列表，不发图片。 */
 async function aiTitle() {
@@ -78,8 +88,10 @@ async function aiTitle() {
   if (!draft || aiBusy.value || !props.aiReady) return;
   aiBusy.value = true;
   aiError.value = "";
+  // 请求留在卡片里完成：卡片一卸载，状态和失败原因就都看不见了。
+  const controller = new AbortController();
+  aiController = controller;
   try {
-    await useMonthlyDraft();
     const items = draft.entryIds
       .map((id) => props.entries.find((entry) => entry.id === id)?.title ?? "")
       .filter(Boolean);
@@ -89,16 +101,45 @@ async function aiTitle() {
         month: `${draft.dateFrom} 至 ${draft.dateTo}`,
         items,
       }),
+      controller.signal,
     );
+    if (controller.signal.aborted) return;
     const copy = parseRecapCopy(raw);
-    title.value = copy.title;
-    notice.value = copy.note ? `AI 建议：${copy.note}` : "AI 起好了标题，可以改。";
+    aiTitleText.value = copy.title;
+    aiNote.value = copy.note;
   } catch (cause) {
-    aiError.value = aiErrorMessage(cause);
+    if (controller.signal.aborted) return;
+    aiError.value = `${aiErrorMessage(cause)} 可以重试，或直接点「用它生成」用默认标题。`;
   } finally {
-    aiBusy.value = false;
+    // 取消后立刻又发起一次时，别让上一次请求的收尾改掉新请求的状态。
+    if (aiController === controller) {
+      aiController = null;
+      aiBusy.value = false;
+    }
   }
 }
+
+function cancelAiTitle() {
+  aiController?.abort();
+  aiController = null;
+  aiBusy.value = false;
+  aiError.value = "";
+}
+
+/** 换了月份或草稿消失，旧的 AI 建议不再适用。 */
+watch(
+  () => monthlyDraft.value?.title,
+  () => {
+    aiController?.abort();
+    aiController = null;
+    aiBusy.value = false;
+    aiError.value = "";
+    aiTitleText.value = "";
+    aiNote.value = "";
+  },
+);
+
+onBeforeUnmount(() => aiController?.abort());
 
 const sortedEntries = computed(() =>
   [...props.entries].sort((a, b) => b.capturedAt.localeCompare(a.capturedAt)),
@@ -148,6 +189,9 @@ watch(
     dateFrom.value = "";
     dateTo.value = "";
     selected.value = [];
+    aiTitleText.value = "";
+    aiNote.value = "";
+    aiError.value = "";
     notice.value = "回顾已保存，可以随时回来继续查看。";
   },
   { deep: true },
@@ -177,7 +221,7 @@ function move(id: string, direction: -1 | 1) {
 function startCreating() {
   creating.value = true;
   notice.value = "";
-  if (!title.value) title.value = "和你一起的这一周";
+  if (!title.value) title.value = aiTitleText.value || "和你一起的这一周";
   if (!dateFrom.value && sortedEntries.value.length)
     dateFrom.value = sortedEntries.value.at(-1)?.capturedAt.slice(0, 10) ?? "";
   if (!dateTo.value && sortedEntries.value.length)
@@ -239,10 +283,13 @@ function createRecap() {
       role="status"
     >
       <div>
-        <strong>{{ monthlyDraft.title }}</strong>
+        <strong>{{ draftTitle }}</strong>
         <p class="muted">
           已预选 {{ monthlyDraft.entryIds.length }}
           个瞬间（收藏与里程碑优先），确认后才会保存。
+        </p>
+        <p v-if="aiTitleText" class="muted ai-suggestion">
+          AI 建议 · {{ aiNote || "点「用它生成」把这个标题带进回顾。" }}
         </p>
       </div>
       <div class="monthly-draft-actions">
@@ -254,14 +301,23 @@ function createRecap() {
           用它生成
         </button>
         <button
-          v-if="aiReady"
+          v-if="aiReady && !aiBusy"
           class="button button-ghost"
           type="button"
-          :disabled="aiBusy"
           @click="aiTitle"
         >
-          {{ aiBusy ? "AI 正在写…" : "AI 起个标题" }}
+          AI 起个标题
         </button>
+        <template v-else-if="aiBusy">
+          <span class="ai-waiting">AI 正在写…（最多 30 秒）</span>
+          <button
+            class="button button-ghost"
+            type="button"
+            @click="cancelAiTitle"
+          >
+            取消
+          </button>
+        </template>
         <button
           class="button button-ghost"
           type="button"
@@ -790,6 +846,14 @@ function createRecap() {
 }
 .monthly-draft-actions .button {
   min-height: 40px;
+  font-size: 13px;
+}
+.monthly-draft .ai-suggestion {
+  color: var(--accent);
+}
+.ai-waiting {
+  align-self: center;
+  color: var(--muted);
   font-size: 13px;
 }
 .monthly-draft-error {
