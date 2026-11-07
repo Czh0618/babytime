@@ -1,6 +1,7 @@
 import { localDateTime } from "./date.ts";
 import {
   CARE_LABELS,
+  MEASURE_RANGES,
   TEMPERATURE_MAX,
   TEMPERATURE_MIN,
   type CareFields,
@@ -145,6 +146,11 @@ function splitClauses(text: string): string[] {
     .replace(/(?:然后|接着|随后|之后)/g, "，")
     // 亲喂左右两侧属于同一次喂奶，逗号不能把它们拆成两条记录。
     .replace(/(左边[^，]{1,16})，(?=右边)/g, "$1 ")
+    // 同一次测量的体重与身高属于一条记录，中间的逗号改成空格。
+    .replace(
+      /((?:体重|身高|身长|头围)[^，。；;！!？?\n]{0,12})[，,](?=\s*(?:身高|身长|头围|体重))/g,
+      "$1 ",
+    )
     .replace(
       /(奶|尿布|尿不湿|便便|睡着了?|入睡)\s*(?=(?:(?:今天|昨天|前天)?(?:凌晨|早上|上午|中午|下午|傍晚|晚上)?[0-9零〇一二两三四五六七八九十百]+\s*(?:点|时)))/g,
       "$1，",
@@ -163,6 +169,8 @@ function isNegative(text: string, keyword: RegExp): boolean {
 function kindFor(text: string): CareKind {
   // 接种优先：疫苗名里常带「乙肝」「流脑」，先判掉避免被其他规则抢走。
   if (/(?:疫苗|接种|打了.*针|打针)/.test(text)) return "vaccination";
+  // 生长测量：体重 / 身高 / 头围。
+  if (/(?:体重|身高|身长|头围|量了|称了)/.test(text)) return "measurement";
   // 体温与用药优先判断：「发烧 38 度 5，喂了美林」要拆成两条，不能被喂奶规则吃掉。
   if (
     /(?:发烧|发热|体温|测了?温度|℃)|[0-9零〇一二两三四五六七八九十]{2}\s*(?:[.．][0-9]|[度℃])/.test(
@@ -304,6 +312,22 @@ function parseMedicine(clause: string): { medicineName?: string; dose?: string }
   return { medicineName: name, dose };
 }
 
+/** 生长测量：体重、身高、头围都只认明确的数字与单位。 */
+function parseMeasurement(clause: string): CareFields {
+  const fields: CareFields = {};
+  const weight =
+    clause.match(/(?:体重)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:公斤|kg|千克)/i)?.[1] ??
+    clause.match(/体重\s*(?:是|有)?\s*([0-9]+(?:\.[0-9]+)?)/)?.[1];
+  if (weight) fields.weightKg = Number(weight);
+  const height =
+    clause.match(/(?:身高|身长)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:厘米|cm|公分)/i)?.[1] ??
+    clause.match(/(?:身高|身长)\s*(?:是|有)?\s*([0-9]+(?:\.[0-9]+)?)/)?.[1];
+  if (height) fields.heightCm = Number(height);
+  const head = clause.match(/头围\s*(?:是|有)?\s*([0-9]+(?:\.[0-9]+)?)/)?.[1];
+  if (head) fields.headCm = Number(head);
+  return fields;
+}
+
 function isPlanned(text: string): boolean {
   return /(?:准备|打算|晚点|稍后|待会儿?|一会儿|明天|后天|等会儿?|计划)/.test(
     text,
@@ -317,6 +341,7 @@ function titleFor(kind: CareKind, text: string): string {
   if (kind === "temperature") return "体温记录";
   if (kind === "medicine") return "用药记录";
   if (kind === "vaccination") return "接种记录";
+  if (kind === "measurement") return "生长测量记录";
   return "日常备注";
 }
 
@@ -391,7 +416,9 @@ function parseClause(
                 ? { vaccineCode: spec.code, vaccineName: spec.name }
                 : {};
             })()
-          : {};
+          : kind === "measurement"
+            ? parseMeasurement(clause)
+            : {};
   return {
     id: `voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     kind,
@@ -437,6 +464,9 @@ function parseNoteClause(clause: string, now: Date): VoiceDraft {
     dose: undefined,
     vaccineCode: undefined,
     vaccineName: undefined,
+    weightKg: undefined,
+    heightCm: undefined,
+    headCm: undefined,
   };
 }
 
@@ -512,6 +542,19 @@ export function validateVoiceDraft(draft: VoiceDraft): string | null {
     return "用药记录需要填写药名。";
   if (draft.kind === "vaccination" && !draft.vaccineCode)
     return "接种记录需要能对上免疫程序里的疫苗，认不出可改为日常备注。";
+  if (draft.kind === "measurement") {
+    const values = [draft.weightKg, draft.heightCm, draft.headCm];
+    if (values.every((value) => value === undefined))
+      return "测量记录至少要填体重、身高或头围中的一项。";
+    for (const [key, range] of Object.entries(MEASURE_RANGES) as Array<
+      [keyof typeof MEASURE_RANGES, (typeof MEASURE_RANGES)[keyof typeof MEASURE_RANGES]]
+    >) {
+      const value = draft[key];
+      if (value === undefined) continue;
+      if (!Number.isFinite(value) || value < range.min || value > range.max)
+        return `${range.label}需要在 ${range.min}–${range.max}${range.unit} 之间，请核对。`;
+    }
+  }
   return null;
 }
 
@@ -535,6 +578,9 @@ export function voiceDraftToEntry(
       dose: draft.dose,
       vaccineCode: draft.vaccineCode,
       vaccineName: draft.vaccineName,
+      weightKg: draft.weightKg,
+      heightCm: draft.heightCm,
+      headCm: draft.headCm,
     }).filter(([, value]) => value !== undefined),
   ) as CareFields;
   return {

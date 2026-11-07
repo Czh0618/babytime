@@ -107,6 +107,14 @@ export function describeCare(care: CareObservation): string {
       "疫苗";
     return `接种 ${name}`;
   }
+  if (care.kind === "measurement") {
+    const parts = [
+      care.weightKg !== undefined ? `体重 ${care.weightKg} kg` : "",
+      care.heightCm !== undefined ? `身高 ${care.heightCm} cm` : "",
+      care.headCm !== undefined ? `头围 ${care.headCm} cm` : "",
+    ].filter(Boolean);
+    return parts.length ? parts.join(" · ") : "已记录测量";
+  }
   return "家长备注";
 }
 

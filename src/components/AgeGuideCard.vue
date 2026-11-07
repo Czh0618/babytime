@@ -7,10 +7,17 @@ import {
   type AgeGuide,
   type ParentActivity,
 } from "../data/age-guides";
+import { milestoneKey } from "../domain/milestones";
 import type { BabyProfile } from "../types";
 
-const props = defineProps<{ baby: BabyProfile }>();
-const emit = defineEmits<{ record: [activity: ParentActivity] }>();
+const props = defineProps<{
+  baby: BabyProfile;
+  milestones?: Record<string, string>;
+}>();
+const emit = defineEmits<{
+  record: [activity: ParentActivity];
+  milestone: [key: string];
+}>();
 const selectedId = ref("auto");
 const GUIDE_OPEN_KEY = "babytime.ageGuideOpen";
 const guideOpen = localStorage.getItem(GUIDE_OPEN_KEY) === "1";
@@ -112,9 +119,30 @@ function resetToCurrent() {
           <BookOpen :size="17" aria-hidden="true" />
           <h3>可以留意</h3>
         </div>
-        <ul>
-          <li v-for="item in selectedGuide.focus" :key="item">{{ item }}</li>
+        <ul class="focus-list">
+          <li
+            v-for="(item, index) in selectedGuide.focus"
+            :key="item"
+            :class="{ achieved: milestones?.[milestoneKey(selectedGuide.id, index)] }"
+          >
+            <label class="focus-check">
+              <input
+                type="checkbox"
+                :checked="Boolean(milestones?.[milestoneKey(selectedGuide.id, index)])"
+                @change="emit('milestone', milestoneKey(selectedGuide.id, index))"
+              />
+              <span>{{ item }}</span>
+              <small
+                v-if="milestones?.[milestoneKey(selectedGuide.id, index)]"
+                class="focus-date"
+                >{{ milestones[milestoneKey(selectedGuide.id, index)] }}</small
+              >
+            </label>
+          </li>
         </ul>
+        <p class="focus-hint">
+          勾选只表示你观察到过，记下日期方便以后回看，不是发育筛查。
+        </p>
       </div>
 
       <div class="activity-block">
@@ -356,6 +384,52 @@ function resetToCurrent() {
 }
 .guide-source a {
   color: var(--accent);
+}
+.focus-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.focus-list li {
+  list-style: none;
+}
+.focus-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-height: 44px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+.focus-check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.focus-check span {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.focus-list li.achieved .focus-check span {
+  color: var(--muted);
+}
+.focus-date {
+  flex: none;
+  color: var(--accent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.focus-hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
 }
 @media (max-width: 450px) {
   .guide-heading {

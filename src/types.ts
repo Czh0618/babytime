@@ -113,6 +113,8 @@ export interface Workspace {
   /** 接种记录；旧备份没有这个字段，读取时补空数组。 */
   vaccinations?: VaccinationRecord[];
   vaccinePlan?: VaccinePlan;
+  /** 里程碑打勾：键 `guideId:index` → 达成日期。 */
+  milestones?: Record<string, string>;
 }
 
 export interface FamilyStats {
@@ -134,4 +136,5 @@ export const ENTRY_TAGS = [
   "体温",
   "用药",
   "接种",
+  "测量",
 ];

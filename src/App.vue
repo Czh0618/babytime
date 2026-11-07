@@ -68,6 +68,8 @@ import {
 } from "./domain/ai";
 import { shouldRemindBackup } from "./domain/backup-reminder";
 import { defaultVaccinePlan, type VaccineTask } from "./domain/vaccines";
+import { measurementDraft } from "./domain/growth";
+import { toggleMilestone } from "./domain/milestones";
 import { buildVaccineIcs, icsFileName } from "./lib/ics";
 import { downloadBlob } from "./lib/export";
 import { isNightTime } from "./domain/night";
@@ -527,6 +529,22 @@ function removeVaccination(id: string) {
   void perform(() => model.removeVaccination(id), "已撤销这剂接种记录。");
 }
 
+function saveMeasurement(values: {
+  weightKg?: number;
+  heightCm?: number;
+  headCm?: number;
+}) {
+  void perform(
+    () => model.saveEntry(measurementDraft(values)),
+    "已记下这次测量。",
+  );
+}
+
+function toggleMilestoneKey(key: string) {
+  const next = toggleMilestone(workspace.value.milestones ?? {}, key);
+  void perform(() => model.saveMilestones(next));
+}
+
 async function confirmAction() {
   const current = overlay.value;
   if (
@@ -685,7 +703,12 @@ onBeforeUnmount(() => {
               @voice="openVoice"
               @open="(entry) => (overlay = { kind: 'detail', id: entry.id })"
             />
-            <AgeGuideCard :baby="workspace.baby" @record="openActivity" />
+            <AgeGuideCard
+              :baby="workspace.baby"
+              :milestones="workspace.milestones ?? {}"
+              @record="openActivity"
+              @milestone="toggleMilestoneKey"
+            />
           </template>
         </TimeView>
         <InboxView
@@ -726,11 +749,14 @@ onBeforeUnmount(() => {
           :baby="workspace.baby"
           :plan="workspace.vaccinePlan ?? defaultVaccinePlan()"
           :records="workspace.vaccinations ?? []"
+          :entries="workspace.entries"
+          :milestones="workspace.milestones ?? {}"
           :busy="busy"
           @save-plan="saveVaccinePlan"
           @add-record="addVaccination"
           @remove-record="removeVaccination"
           @calendar="downloadVaccineEvent"
+          @measure="saveMeasurement"
         />
         <FamilyView
           v-else

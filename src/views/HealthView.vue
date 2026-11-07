@@ -3,6 +3,7 @@ import { computed, reactive, ref } from "vue";
 import { CalendarPlus, Check, Plus, Trash2 } from "@lucide/vue";
 import type {
   BabyProfile,
+  GrowthEntry,
   VaccinationRecord,
   VaccinePlan,
 } from "../types";
@@ -15,11 +16,22 @@ import {
 } from "../domain/vaccines";
 import { VACCINE_SOURCE } from "../data/vaccines-2026";
 import { localDate } from "../domain/date";
+import {
+  GROWTH_METRICS,
+  correctedBirthDate,
+  growthSeries,
+  latestMeasurement,
+  type GrowthMetric,
+} from "../domain/growth";
+import { achievedMilestones } from "../domain/milestones";
+import GrowthChart from "../components/GrowthChart.vue";
 
 const props = defineProps<{
   baby: BabyProfile;
   plan: VaccinePlan;
   records: VaccinationRecord[];
+  entries: GrowthEntry[];
+  milestones: Record<string, string>;
   busy: boolean;
 }>();
 const emit = defineEmits<{
@@ -27,6 +39,7 @@ const emit = defineEmits<{
   addRecord: [record: Omit<VaccinationRecord, "id" | "createdAt">];
   removeRecord: [id: string];
   calendar: [task: VaccineTask];
+  measure: [values: { weightKg?: number; heightCm?: number; headCm?: number }];
 }>();
 
 const today = localDate();
@@ -52,6 +65,36 @@ const customRecords = computed(() =>
     .filter((item) => item.code === "custom")
     .sort((a, b) => b.date.localeCompare(a.date)),
 );
+
+const metric = ref<GrowthMetric>("weightKg");
+const metricSpec = computed(
+  () => GROWTH_METRICS.find((item) => item.id === metric.value)!,
+);
+const points = computed(() =>
+  growthSeries(props.entries, props.baby, metric.value),
+);
+const corrected = computed(() => correctedBirthDate(props.baby).corrected);
+const latest = computed(() => latestMeasurement(props.entries));
+const achieved = computed(() => achievedMilestones(props.milestones));
+const measure = reactive({ weightKg: "", heightCm: "", headCm: "" });
+
+function addMeasure() {
+  const values = {
+    weightKg: measure.weightKg ? Number(measure.weightKg) : undefined,
+    heightCm: measure.heightCm ? Number(measure.heightCm) : undefined,
+    headCm: measure.headCm ? Number(measure.headCm) : undefined,
+  };
+  if (
+    values.weightKg === undefined &&
+    values.heightCm === undefined &&
+    values.headCm === undefined
+  )
+    return;
+  emit("measure", values);
+  measure.weightKg = "";
+  measure.heightCm = "";
+  measure.headCm = "";
+}
 
 function key(task: VaccineTask) {
   return `${task.code}-${task.dose}`;
@@ -345,6 +388,107 @@ function toggleSpecial(event: Event) {
       <p class="source-line">{{ VACCINE_SOURCE }}</p>
     </section>
 
+    <section class="growth-card surface">
+      <div class="growth-head">
+        <div>
+          <h2 class="section-heading">生长曲线</h2>
+          <p class="muted">
+            只画你自己记录的测量点，不显示百分位参考线，也不判断偏高或偏低。
+          </p>
+        </div>
+      </div>
+      <div class="metric-tabs" role="group" aria-label="成长指标">
+        <button
+          v-for="item in GROWTH_METRICS"
+          :key="item.id"
+          type="button"
+          class="filter-tab"
+          :class="{ active: metric === item.id }"
+          :aria-pressed="metric === item.id"
+          @click="metric = item.id"
+        >
+          {{ item.label }}
+        </button>
+      </div>
+      <GrowthChart
+        v-if="points.length"
+        :points="points"
+        :label="metricSpec.label"
+        :unit="metricSpec.unit"
+        :corrected="corrected"
+      />
+      <p v-else class="empty-hint">还没有{{ metricSpec.label }}记录。</p>
+
+      <form class="measure-form" @submit.prevent="addMeasure">
+        <label class="field"
+          ><span>体重（kg）</span
+          ><input
+            v-model="measure.weightKg"
+            type="number"
+            min="0.5"
+            max="40"
+            step="0.1"
+            inputmode="decimal"
+            placeholder="例如 7.2"
+        /></label>
+        <label class="field"
+          ><span>身高（cm）</span
+          ><input
+            v-model="measure.heightCm"
+            type="number"
+            min="20"
+            max="130"
+            step="0.1"
+            inputmode="decimal"
+            placeholder="例如 65"
+        /></label>
+        <label class="field"
+          ><span>头围（cm）</span
+          ><input
+            v-model="measure.headCm"
+            type="number"
+            min="20"
+            max="60"
+            step="0.1"
+            inputmode="decimal"
+            placeholder="例如 42"
+        /></label>
+        <button class="button button-secondary" type="submit" :disabled="busy">
+          <Plus :size="15" aria-hidden="true" />记一次测量
+        </button>
+      </form>
+      <p v-if="latest" class="muted latest-line">
+        最近一次：{{ fullDate(latest.date.slice(0, 10)) }} ·
+        <template v-if="latest.weightKg !== undefined"
+          >体重 {{ latest.weightKg }} kg </template
+        ><template v-if="latest.heightCm !== undefined"
+          >身高 {{ latest.heightCm }} cm </template
+        ><template v-if="latest.headCm !== undefined"
+          >头围 {{ latest.headCm }} cm</template
+        >
+      </p>
+      <p class="source-line">
+        百分位参考需要《7 岁以下儿童生长标准》WS/T 423-2022
+        的原文数据，尚未录入，所以这里只显示家长自己的测量点。
+        早产宝宝把预产期填在家庭页后，横轴会用矫正月龄。
+      </p>
+    </section>
+
+    <section class="milestone-card surface">
+      <h2 class="section-heading">里程碑</h2>
+      <p class="muted">
+        在「今天」页的月龄指引里勾选，这里会按达成日期汇总。
+      </p>
+      <ul v-if="achieved.length" class="milestone-list">
+        <li v-for="item in achieved" :key="item.key">
+          <span class="milestone-date">{{ item.date }}</span>
+          <span class="milestone-text">{{ item.text }}</span>
+          <span class="pill">{{ item.guideLabel }}</span>
+        </li>
+      </ul>
+      <p v-else class="empty-hint">还没有勾选过里程碑。</p>
+    </section>
+
     <section class="custom-card surface">
       <h2 class="section-heading">自费疫苗</h2>
       <p class="muted custom-hint">
@@ -392,10 +536,60 @@ function toggleSpecial(event: Event) {
   gap: 22px;
 }
 .vaccine-card,
-.custom-card {
+.custom-card,
+.growth-card,
+.milestone-card {
   display: grid;
   gap: 14px;
   padding: 18px 16px;
+}
+.growth-head h2 {
+  margin: 0 0 4px;
+}
+.metric-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+}
+.measure-form {
+  display: grid;
+  gap: 10px;
+}
+.latest-line {
+  font-size: var(--font-xs);
+  margin: 0;
+}
+.milestone-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.milestone-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.milestone-date {
+  flex: none;
+  color: var(--accent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.milestone-text {
+  flex: 1;
+  min-width: 0;
+}
+@media (min-width: 720px) {
+  .measure-form {
+    grid-template-columns: repeat(3, 1fr) auto;
+    align-items: end;
+  }
 }
 .vaccine-head {
   display: flex;

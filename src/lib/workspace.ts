@@ -47,6 +47,8 @@ function normalizeVaccines(target: Workspace) {
   const plan = target.vaccinePlan;
   if (!plan || typeof plan !== "object" || !plan.choices)
     target.vaccinePlan = defaultVaccinePlan();
+  if (!target.milestones || typeof target.milestones !== "object")
+    target.milestones = {};
 }
 
 export function useWorkspace() {
@@ -413,6 +415,12 @@ export function useWorkspace() {
     });
   }
 
+  async function saveMilestones(milestones: Record<string, string>) {
+    await update((next) => {
+      next.milestones = { ...milestones };
+    });
+  }
+
   async function saveProfile(baby: BabyProfile) {
     const error = validateProfile(baby);
     if (error) throw new Error(error);
@@ -475,6 +483,7 @@ export function useWorkspace() {
     addVaccination,
     removeVaccination,
     saveVaccinePlan,
+    saveMilestones,
     saveProfile,
     clearDemo,
     loadDemo,

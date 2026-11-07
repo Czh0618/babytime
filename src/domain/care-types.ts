@@ -5,7 +5,8 @@ export type CareKind =
   | "note"
   | "temperature"
   | "medicine"
-  | "vaccination";
+  | "vaccination"
+  | "measurement";
 
 export type TemperatureSite = "ear" | "forehead" | "armpit" | "rectal";
 
@@ -67,7 +68,18 @@ export interface CareFields {
   vaccineCode?: string;
   /** 疫苗名称，语音里说的原文。 */
   vaccineName?: string;
+  /** 生长测量：体重 kg、身高 cm、头围 cm。 */
+  weightKg?: number;
+  heightCm?: number;
+  headCm?: number;
 }
+
+/** 测量的合理范围；只用于拦住明显输错，不做任何判断。 */
+export const MEASURE_RANGES = {
+  weightKg: { min: 0.5, max: 40, label: "体重", unit: "kg" },
+  heightCm: { min: 20, max: 130, label: "身高", unit: "cm" },
+  headCm: { min: 20, max: 60, label: "头围", unit: "cm" },
+} as const;
 
 export interface CareObservation extends CareFields {
   kind: CareKind;
@@ -105,6 +117,7 @@ export const CARE_LABELS: Record<CareKind, string> = {
   temperature: "体温",
   medicine: "用药",
   vaccination: "接种",
+  measurement: "测量",
 };
 
 /** 手动记录里「放进哪一类」与照护类型的对应关系，非照护标签返回 undefined。 */
@@ -116,6 +129,7 @@ const TAG_CARE_KINDS: Record<string, CareKind> = {
   体温: "temperature",
   用药: "medicine",
   接种: "vaccination",
+  测量: "measurement",
 };
 
 export function careFromTag(

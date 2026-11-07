@@ -303,6 +303,9 @@ function changeKind(index: number, value: CareKind) {
     dose: undefined,
     vaccineCode: undefined,
     vaccineName: undefined,
+    weightKg: undefined,
+    heightCm: undefined,
+    headCm: undefined,
   });
 }
 
@@ -680,6 +683,51 @@ onBeforeUnmount(() => {
             </option>
           </select></label
         >
+        <label v-if="draft.kind === 'measurement'" class="field"
+          ><span>体重（kg）<small>可选</small></span
+          ><input
+            :value="draft.weightKg ?? ''"
+            type="number"
+            min="0.5"
+            max="40"
+            step="0.1"
+            inputmode="decimal"
+            @input="
+              updateDraft(index, {
+                weightKg: numberInput(($event.target as HTMLInputElement).value),
+              })
+            "
+        /></label>
+        <label v-if="draft.kind === 'measurement'" class="field"
+          ><span>身高（cm）<small>可选</small></span
+          ><input
+            :value="draft.heightCm ?? ''"
+            type="number"
+            min="20"
+            max="130"
+            step="0.1"
+            inputmode="decimal"
+            @input="
+              updateDraft(index, {
+                heightCm: numberInput(($event.target as HTMLInputElement).value),
+              })
+            "
+        /></label>
+        <label v-if="draft.kind === 'measurement'" class="field"
+          ><span>头围（cm）<small>可选</small></span
+          ><input
+            :value="draft.headCm ?? ''"
+            type="number"
+            min="20"
+            max="60"
+            step="0.1"
+            inputmode="decimal"
+            @input="
+              updateDraft(index, {
+                headCm: numberInput(($event.target as HTMLInputElement).value),
+              })
+            "
+        /></label>
         <label v-if="draft.kind === 'medicine'" class="field"
           ><span>药名</span
           ><input

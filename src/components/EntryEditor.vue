@@ -406,6 +406,39 @@ function startPlayback() {
             </option>
           </select></label
         >
+        <label v-if="draft.care.kind === 'measurement'" class="field"
+          ><span>体重（kg）</span
+          ><input
+            :value="draft.care.weightKg ?? ''"
+            type="number"
+            min="0.5"
+            max="40"
+            step="0.1"
+            inputmode="decimal"
+            @input="draft.care.weightKg = numberInput($event)"
+        /></label>
+        <label v-if="draft.care.kind === 'measurement'" class="field"
+          ><span>身高（cm）</span
+          ><input
+            :value="draft.care.heightCm ?? ''"
+            type="number"
+            min="20"
+            max="130"
+            step="0.1"
+            inputmode="decimal"
+            @input="draft.care.heightCm = numberInput($event)"
+        /></label>
+        <label v-if="draft.care.kind === 'measurement'" class="field"
+          ><span>头围（cm）</span
+          ><input
+            :value="draft.care.headCm ?? ''"
+            type="number"
+            min="20"
+            max="60"
+            step="0.1"
+            inputmode="decimal"
+            @input="draft.care.headCm = numberInput($event)"
+        /></label>
       </div>
       <div
         v-if="currentMedia?.kind === 'video' && currentMedia.duration"

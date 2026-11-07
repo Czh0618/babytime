@@ -11,6 +11,7 @@ export function emptyWorkspace(): Workspace {
     recaps: [],
     vaccinations: [],
     vaccinePlan: { specialProgram: false, choices: {} },
+    milestones: {},
   };
 }
 

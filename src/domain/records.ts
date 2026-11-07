@@ -6,7 +6,7 @@ import type {
   Workspace,
 } from "../types.ts";
 import { demoWorkspace } from "./seed.ts";
-import { TEMPERATURE_MAX, TEMPERATURE_MIN } from "./care-types.ts";
+import { MEASURE_RANGES, TEMPERATURE_MAX, TEMPERATURE_MIN } from "./care-types.ts";
 
 export function validateEntry(
   draft: EntryDraft,
@@ -27,6 +27,7 @@ export function validateEntry(
         "temperature",
         "medicine",
         "vaccination",
+        "measurement",
       ].includes(draft.care.kind)
     )
       return "请选择有效的照护类型。";
@@ -43,6 +44,28 @@ export function validateEntry(
     }
     if (draft.care.kind === "medicine" && !draft.care.medicineName?.trim())
       return "请填写药名。";
+    if (draft.care.kind === "vaccination" && !draft.care.vaccineCode)
+      return "请选择对应的疫苗。";
+    if (draft.care.kind === "measurement") {
+      const values = [
+        draft.care.weightKg,
+        draft.care.heightCm,
+        draft.care.headCm,
+      ];
+      if (values.every((value) => value === undefined))
+        return "测量记录至少要填体重、身高或头围中的一项。";
+      for (const [key, range] of Object.entries(MEASURE_RANGES) as Array<
+        [
+          keyof typeof MEASURE_RANGES,
+          (typeof MEASURE_RANGES)[keyof typeof MEASURE_RANGES],
+        ]
+      >) {
+        const value = draft.care[key];
+        if (value === undefined) continue;
+        if (!Number.isFinite(value) || value < range.min || value > range.max)
+          return `${range.label}需要在 ${range.min}–${range.max}${range.unit} 之间，请核对。`;
+      }
+    }
   }
   if (draft.start !== undefined || draft.end !== undefined) {
     const { start, end } = draft;

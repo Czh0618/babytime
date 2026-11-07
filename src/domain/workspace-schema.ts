@@ -82,12 +82,16 @@ function validCare(value: unknown): boolean {
       "temperature",
       "medicine",
       "vaccination",
+      "measurement",
     ].includes(care.kind) &&
     typeof care.sourceText === "string" &&
     optionalString(care.inputId) &&
     optionalNumber(care.amountMl) &&
     optionalNumber(care.durationMinutes) &&
     optionalNumber(care.temperatureC) &&
+    optionalNumber(care.weightKg) &&
+    optionalNumber(care.heightCm) &&
+    optionalNumber(care.headCm) &&
     optionalNumber(care.leftMinutes) &&
     optionalNumber(care.rightMinutes) &&
     optionalNumber(care.feedingMinutes) &&
@@ -176,7 +180,13 @@ function validBackupWorkspace(workspace: Workspace): boolean {
         typeof item.createdAt === "string" &&
         optionalString(item.name) && optionalString(item.clinic) &&
         optionalString(item.lot) && optionalString(item.inputId))) &&
-    (workspace.vaccinePlan === undefined || validVaccinePlan(workspace.vaccinePlan))
+    (workspace.vaccinePlan === undefined || validVaccinePlan(workspace.vaccinePlan)) &&
+    (workspace.milestones === undefined ||
+      (typeof workspace.milestones === "object" &&
+        !Array.isArray(workspace.milestones) &&
+        Object.values(workspace.milestones).every(
+          (value) => typeof value === "string",
+        )))
   );
 }
 
