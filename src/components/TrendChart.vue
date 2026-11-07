@@ -20,6 +20,7 @@ import { aiAvailable, aiChat, aiErrorMessage } from "../lib/ai-service";
 const props = defineProps<{ entries: GrowthEntry[]; ageMonths?: number }>();
 const range = ref<7 | 30>(7);
 const metric = ref<TrendMetric>("intake");
+const selectedDate = ref<string | null>(null);
 const aiReady = computed(() => aiAvailable());
 const insight = ref("");
 const insightError = ref("");
@@ -90,6 +91,29 @@ const bars = computed(() => {
   });
 });
 
+const selectedDay = computed(() => {
+  const fromClick = selectedDate.value
+    ? stats.value.find((day) => day.date === selectedDate.value)
+    : undefined;
+  if (fromClick?.hasData) return fromClick;
+  return [...stats.value].reverse().find((day) => day.hasData);
+});
+
+function daySummary(day: (typeof stats.value)[number]): string {
+  const [, month, date] = day.date.split("-");
+  const sleepHours = Math.round((day.sleepMinutes / 60) * 10) / 10;
+  const parts = [
+    day.feedingCount
+      ? `喂奶 ${day.feedingCount} 次${day.intakeMl ? `（摄入 ${day.intakeMl} ml）` : ""}`
+      : "",
+    sleepHours ? `睡眠 ${sleepHours} 小时` : "",
+    day.diaperCount
+      ? `尿布 ${day.diaperCount} 次（湿 ${day.wetCount} / 便 ${day.dirtyCount}）`
+      : "",
+  ].filter(Boolean);
+  return `${Number(month)}月${Number(date)}日：${parts.join(" · ") || "已记录其他照护"}`;
+}
+
 function labelFor(date: string, index: number): string {
   if (range.value === 30 && index % 5 !== 0 && index !== stats.value.length - 1)
     return "";
@@ -155,7 +179,8 @@ function labelFor(date: string, index: number): string {
             :y="bar.y"
             :width="bar.width"
             :height="bar.height"
-            class="trend-bar"
+            :class="['trend-bar', { active: selectedDay?.date === bar.day }]"
+            @click="selectedDate = bar.day"
           />
         </template>
       </svg>
@@ -165,8 +190,11 @@ function labelFor(date: string, index: number): string {
         }}</span>
       </div>
     </div>
+    <p v-if="selectedDay" class="trend-note">
+      {{ daySummary(selectedDay) }}
+    </p>
     <p class="trend-note muted">
-      单位：{{ currentMetric.unit }} · 没有记录的日子留空，不按 0 显示。
+      单位：{{ currentMetric.unit }} · 点击柱子可看单日汇总，无记录的日子留空。
     </p>
     <div class="trend-ai">
       <button
@@ -250,6 +278,10 @@ function labelFor(date: string, index: number): string {
 .trend-bar {
   fill: var(--accent);
   opacity: 0.78;
+  cursor: pointer;
+}
+.trend-bar.active {
+  opacity: 1;
 }
 .trend-labels {
   display: flex;

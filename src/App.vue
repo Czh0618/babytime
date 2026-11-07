@@ -40,20 +40,19 @@ import {
   startTimer as createTimer,
   switchTimerSide,
   timerDraft,
-  type TimerKind,
+  type ActiveTimer,
   type TimerSide,
 } from "./domain/timer";
 import { voiceDraftToEntry } from "./domain/voice-parser";
 import {
+  manualSleepDraft,
   quickActionLabel,
   quickCareDraft,
+  wakeUpCare,
   type QuickKind,
 } from "./domain/quick";
-import {
-  clearActiveTimer,
-  readActiveTimer,
-  writeActiveTimer,
-} from "./lib/timer";
+import { ongoingSleep } from "./domain/sleep";
+import { readActiveTimers, writeActiveTimers } from "./lib/timer";
 import { localDateTime } from "./domain/date";
 import { ageOn } from "./domain/age";
 import { useWorkspace } from "./lib/workspace";
@@ -257,41 +256,62 @@ function openVoice() {
   formError.value = "";
   overlay.value = { kind: "voice" };
 }
-const activeTimer = ref(readActiveTimer());
+/** 每个宝宝各有一条计时；旧状态没有 babyId 时归当前宝宝。 */
+const activeTimers = ref<ActiveTimer[]>(readActiveTimers());
+const babyOfTimer = (timer: ActiveTimer) =>
+  timer.babyId ?? activeProfile.value.id;
+const currentTimer = computed(
+  () =>
+    activeTimers.value.find(
+      (timer) => babyOfTimer(timer) === activeProfile.value.id,
+    ) ?? null,
+);
+
+function putTimer(next: ActiveTimer) {
+  const babyId = babyOfTimer(next);
+  activeTimers.value = [
+    ...activeTimers.value.filter((item) => babyOfTimer(item) !== babyId),
+    next,
+  ];
+  writeActiveTimers(activeTimers.value);
+}
+
+function dropCurrentTimer() {
+  const babyId = activeProfile.value.id;
+  activeTimers.value = activeTimers.value.filter(
+    (item) => babyOfTimer(item) !== babyId,
+  );
+  writeActiveTimers(activeTimers.value);
+}
 
 /** 计时只存开始时间，页面被杀掉后重新打开仍能算回原时长。 */
-function startTimer(kind: TimerKind, side: TimerSide = "left") {
-  if (activeTimer.value) return;
-  const next = createTimer(kind, new Date(), side);
-  writeActiveTimer(next);
-  activeTimer.value = next;
-  say(kind === "feeding" ? "已开始亲喂计时，可以随时换边。" : "已开始睡眠计时。");
+function startTimer(side: TimerSide = "left") {
+  if (currentTimer.value) return;
+  putTimer(createTimer(new Date(), side, activeProfile.value.id));
+  say("已开始亲喂计时，可以随时换边。");
 }
 
 function switchTimer(side: TimerSide) {
-  if (!activeTimer.value) return;
-  const next = switchTimerSide(activeTimer.value, side, new Date());
-  writeActiveTimer(next);
-  activeTimer.value = next;
+  if (!currentTimer.value) return;
+  putTimer(switchTimerSide(currentTimer.value, side, new Date()));
 }
 
-/** 结束计时走现有确认流程：先给草稿，家长确认后才落库。 */
+/** 结束计时走现有确认流程：先给草稿，家长确认后按当前宝宝落库。 */
 function finishTimer() {
-  const timer = activeTimer.value;
+  const timer = currentTimer.value;
   if (!timer) return;
   const draft = voiceDraftToEntry(
     timerDraft(timer, new Date()),
     `timer-${Date.now()}`,
   );
-  clearActiveTimer();
-  activeTimer.value = null;
+  dropCurrentTimer();
   formError.value = "";
   overlay.value = { kind: "editor", initialDraft: draft };
 }
 
 function cancelTimer() {
-  clearActiveTimer();
-  activeTimer.value = null;
+  if (!currentTimer.value) return;
+  dropCurrentTimer();
   say("已放弃这次计时，没有生成记录。");
 }
 
@@ -311,7 +331,12 @@ function writeFlag(key: string) {
   }
 }
 
-const recentQuick = ref<{ id: string; label: string; at: string } | null>(null);
+const recentQuick = ref<{
+  id: string;
+  label: string;
+  at: string;
+  previousDraft?: EntryDraft;
+} | null>(null);
 let quickTimer: ReturnType<typeof setTimeout> | undefined;
 const guideSeen = ref(readFlag("babytime.guideSeen"));
 const showFirstRun = computed(
@@ -322,9 +347,43 @@ const showFirstRun = computed(
     !guideSeen.value,
 );
 
-/** 一键快记：默认当前时间，记完可以立刻撤销。 */
+/** 一键快记：默认当前时间，记完可以立刻补充详情或撤销；点「醒来」可闭合进行中的睡眠。 */
 function quickLog(kind: QuickKind) {
-  const draft = quickCareDraft(kind, new Date());
+  const now = new Date();
+  if (kind === "awake") {
+    const sleeping = ongoingSleep(entries.value, now);
+    if (sleeping && sleeping.care) {
+      const previousDraft: EntryDraft = {
+        title: sleeping.title,
+        note: sleeping.note,
+        capturedAt: sleeping.capturedAt,
+        tag: sleeping.tag,
+        milestone: sleeping.milestone,
+        start: sleeping.start,
+        end: sleeping.end,
+        care: { ...sleeping.care },
+        activityId: sleeping.activityId,
+      };
+      const updatedCare = wakeUpCare(sleeping.care, sleeping.capturedAt, now);
+      void perform(async () => {
+        await model.saveEntry(
+          { ...previousDraft, care: updatedCare },
+          undefined,
+          sleeping,
+        );
+        recentQuick.value = {
+          id: sleeping.id,
+          label: `睡醒（共 ${updatedCare.durationMinutes} 分钟）`,
+          at: localDateTime(now),
+          previousDraft,
+        };
+        clearTimeout(quickTimer);
+        quickTimer = setTimeout(() => (recentQuick.value = null), 12_000);
+      });
+      return;
+    }
+  }
+  const draft = quickCareDraft(kind, now);
   void perform(async () => {
     const id = await model.addQuickEntry(draft);
     recentQuick.value = { id, label: quickActionLabel(kind), at: draft.capturedAt };
@@ -335,9 +394,46 @@ function quickLog(kind: QuickKind) {
 
 function undoQuick(id: string) {
   const entry = workspace.value.entries.find((item) => item.id === id);
+  const previousDraft =
+    recentQuick.value?.id === id ? recentQuick.value.previousDraft : undefined;
   recentQuick.value = null;
   clearTimeout(quickTimer);
-  if (entry) void perform(() => model.deleteEntry(entry), "已撤销这条快记。");
+  if (!entry) return;
+  if (previousDraft) {
+    void perform(
+      () => model.saveEntry(previousDraft, undefined, entry),
+      "已恢复为睡着状态。",
+    );
+  } else {
+    void perform(() => model.deleteEntry(entry), "已撤销这条快记。");
+  }
+}
+
+function editQuick(id: string) {
+  const entry = workspace.value.entries.find((item) => item.id === id);
+  recentQuick.value = null;
+  clearTimeout(quickTimer);
+  if (!entry) return;
+  formError.value = "";
+  overlay.value = { kind: "editor", entry };
+}
+
+function manualSleep(asleep: string, awake: string) {
+  const draft = manualSleepDraft(asleep, awake, new Date());
+  if (!draft) {
+    say("请填写不同的入睡与醒来时间。", true);
+    return;
+  }
+  void perform(async () => {
+    const id = await model.addQuickEntry(draft);
+    recentQuick.value = {
+      id,
+      label: `补记睡眠（${draft.care?.durationMinutes ?? 0} 分钟）`,
+      at: draft.capturedAt,
+    };
+    clearTimeout(quickTimer);
+    quickTimer = setTimeout(() => (recentQuick.value = null), 12_000);
+  });
 }
 
 function dismissGuide() {
@@ -652,7 +748,7 @@ function printVisit() {
 function exportCsv() {
   const name = activeProfile.value.name || "宝宝";
   downloadBlob(
-    new Blob([buildEntriesCsv(workspace.value.entries)], {
+    new Blob([buildEntriesCsv(entries.value)], {
       type: "text/csv;charset=utf-8",
     }),
     `${name}-照护记录.csv`,
@@ -821,11 +917,13 @@ onBeforeUnmount(() => {
             />
             <VoiceEntryCard @start="openVoice" />
             <QuickLogCard
-              :timer="activeTimer"
+              :timer="currentTimer"
               :recent="recentQuick"
               :night="night"
               @quick="quickLog"
               @undo="undoQuick"
+              @edit="editQuick"
+              @manual-sleep="manualSleep"
               @start="startTimer"
               @switch="switchTimer"
               @finish="finishTimer"

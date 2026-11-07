@@ -15,6 +15,8 @@ export interface BabyProfile {
   /** 这个宝宝自己的疫苗计划与里程碑（P5，旧数据迁移时从顶层搬进来）。 */
   vaccinePlan?: VaccinePlan;
   milestones?: Record<string, string>;
+  /** 已取消勾选的里程碑键，随 profiles 一起同步；旧档案没有这个字段。 */
+  deletedMilestones?: string[];
 }
 
 export interface DemoProfileRestorePoint {

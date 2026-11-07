@@ -1,4 +1,5 @@
 import type { GrowthEntry } from "../types.ts";
+import { describeCare } from "./care-records.ts";
 
 /** 时间线按天分组：同一天的照护记录折叠成一行摘要，照片文字记录照常展开。 */
 
@@ -82,4 +83,61 @@ export function buildTimeline(
     };
   });
   return { days, hasMore: dates.length > visible.length, totalDays: dates.length };
+}
+
+/** 分类筛选只列日常最高频的照护类型；测量、接种等仍可用关键词搜到。 */
+export type TimelineCareFilter =
+  | "all"
+  | "feeding"
+  | "sleep"
+  | "diaper"
+  | "temperature"
+  | "medicine";
+
+export const TIMELINE_CARE_FILTERS: ReadonlyArray<{
+  id: TimelineCareFilter;
+  label: string;
+}> = [
+  { id: "all", label: "全部类型" },
+  { id: "feeding", label: "喂奶" },
+  { id: "sleep", label: "睡眠" },
+  { id: "diaper", label: "换尿布" },
+  { id: "temperature", label: "体温" },
+  { id: "medicine", label: "用药" },
+];
+
+/** 关键词匹配标题、备注、标签、整理后的照护内容、原话与照护里的文字字段。 */
+export function matchesTimelineQuery(entry: GrowthEntry, keyword: string): boolean {
+  const query = keyword.trim().toLocaleLowerCase();
+  if (!query) return true;
+  const care = entry.care;
+  const parts: string[] = [entry.title, entry.note, entry.tag];
+  if (care) {
+    parts.push(describeCare(care));
+    for (const value of Object.values(care))
+      if (typeof value === "string") parts.push(value);
+  }
+  return parts.some((part) => part?.toLocaleLowerCase().includes(query));
+}
+
+export function hasTimelineQuery(
+  keyword: string,
+  care: TimelineCareFilter,
+): boolean {
+  return Boolean(keyword.trim()) || care !== "all";
+}
+
+/** 搜索或照护分类筛选：先按类别收窄，再按关键词匹配，两个条件同时生效。 */
+export function filterTimelineEntries(
+  entries: GrowthEntry[],
+  keyword = "",
+  care: TimelineCareFilter = "all",
+): GrowthEntry[] {
+  if (!hasTimelineQuery(keyword, care)) return entries;
+  const query = keyword.trim().toLocaleLowerCase();
+  return entries.filter(
+    (entry) =>
+      (care === "all" || entry.care?.kind === care) &&
+      matchesTimelineQuery(entry, query),
+  );
 }

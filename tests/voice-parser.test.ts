@@ -214,3 +214,19 @@ test("P1.2 转换成长记录时保留新字段，旧记录不产生多余字段
     "sourceText",
   ]);
 });
+
+test("P6.3 口语相对分钟与昨晚/今早时间解析", () => {
+  // now = 2026-11-04 18:30
+  const [twentyMinAgo] = parseVoiceTranscript("二十分钟前喂了90毫升奶", now);
+  assert.equal(twentyMinAgo!.capturedAt, "2026-11-04T18:10");
+  assert.equal(twentyMinAgo!.needsTimeConfirmation, false);
+  assert.equal(twentyMinAgo!.amountMl, 90);
+
+  const [lastNight] = parseVoiceTranscript("昨晚十点半睡着了", now);
+  assert.equal(lastNight!.capturedAt, "2026-11-03T22:30");
+  assert.equal(lastNight!.needsTimeConfirmation, false);
+
+  const [thisMorning] = parseVoiceTranscript("今早七点一刻醒来了", now);
+  assert.equal(thisMorning!.capturedAt, "2026-11-04T07:15");
+  assert.equal(thisMorning!.needsTimeConfirmation, false);
+});

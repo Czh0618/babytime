@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   deriveSleepSegments,
   formatMinutes,
+  ongoingSleep,
   sleepSummaryForDay,
   splitSegmentByDay,
   type SleepSegment,
@@ -148,4 +149,33 @@ test("时长文案", () => {
   assert.equal(formatMinutes(45), "45 分钟");
   assert.equal(formatMinutes(120), "2 小时");
   assert.equal(formatMinutes(135), "2 小时 15 分");
+});
+
+test("进行中的睡眠：最近一条是「睡着」、不晚于现在、且在 24 小时内", () => {
+  const now = new Date("2026-11-07T15:00:00");
+  const start = entry("2026-11-07T13:00", asleep());
+  assert.equal(ongoingSleep([start], now)?.id, start.id);
+  assert.equal(
+    ongoingSleep([start, entry("2026-11-07T14:00", awake())], now),
+    undefined,
+    "已经醒来",
+  );
+  assert.equal(
+    ongoingSleep(
+      [entry("2026-11-07T13:00", { ...asleep(), sleepState: "duration", durationMinutes: 60 })],
+      now,
+    ),
+    undefined,
+    "已经补成一段睡眠",
+  );
+  assert.equal(
+    ongoingSleep([entry("2026-11-06T14:59", asleep())], now),
+    undefined,
+    "超过 24 小时没点醒来，当作忘了点",
+  );
+  assert.equal(
+    ongoingSleep([start, entry("2026-11-07T16:00", awake())], now)?.id,
+    start.id,
+    "晚于现在的记录不参与判断",
+  );
 });

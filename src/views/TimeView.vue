@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ChevronUp,
   Plus,
+  Search,
   Sparkles,
   Star,
 } from "@lucide/vue";
@@ -12,7 +13,13 @@ import TimelineRow from "../components/TimelineRow.vue";
 import type { BabyProfile, GrowthEntry, MediaAsset } from "../types";
 import { dayAge, formatDate } from "../domain/date";
 import { ageOn } from "../domain/age";
-import { buildTimeline } from "../domain/timeline";
+import {
+  buildTimeline,
+  filterTimelineEntries,
+  hasTimelineQuery,
+  TIMELINE_CARE_FILTERS,
+  type TimelineCareFilter,
+} from "../domain/timeline";
 
 const props = defineProps<{
   baby: BabyProfile;
@@ -31,14 +38,23 @@ const emit = defineEmits<{
 }>();
 
 const filter = ref<"all" | "favorite" | "milestone">("all");
+const keyword = ref("");
+const careFilter = ref<TimelineCareFilter>("all");
 const hasValidBirthday = computed(() => ageOn(props.baby.birthDate).valid);
+const hasQuery = computed(() =>
+  hasTimelineQuery(keyword.value, careFilter.value),
+);
 
 const visibleEntries = computed(() =>
-  [...props.entries].filter((entry) => {
-    if (filter.value === "favorite") return entry.favorite;
-    if (filter.value === "milestone") return entry.milestone;
-    return true;
-  }),
+  filterTimelineEntries(
+    [...props.entries].filter((entry) => {
+      if (filter.value === "favorite") return entry.favorite;
+      if (filter.value === "milestone") return entry.milestone;
+      return true;
+    }),
+    keyword.value,
+    careFilter.value,
+  ),
 );
 
 /** 首屏只渲染 14 天，之后每次再加 14 天，避免几千条记录一次铺开。 */
@@ -49,7 +65,7 @@ const timeline = computed(() =>
   buildTimeline(visibleEntries.value, limitDays.value),
 );
 
-watch(filter, () => {
+watch([filter, keyword, careFilter], () => {
   limitDays.value = PAGE_DAYS;
   expanded.value = new Set();
 });
@@ -76,8 +92,9 @@ function weekday(date: string) {
   );
 }
 
+/** 搜索或按照护类别筛选时，自动展开命中的照护记录，不让结果藏在折叠行里。 */
 function isExpanded(date: string) {
-  return expanded.value.has(date);
+  return hasQuery.value || expanded.value.has(date);
 }
 
 function toggleDay(date: string) {
@@ -148,7 +165,11 @@ function toggleDay(date: string) {
         <p class="eyebrow">最近的时光</p>
         <h2 class="section-heading">已经收进来的日子</h2>
       </div>
-      <span class="muted">{{ entries.length }} 条</span>
+      <span class="muted">
+        {{ visibleEntries.length }} 条<template v-if="hasQuery">
+          / 共 {{ entries.length }} 条</template
+        >
+      </span>
     </div>
 
     <div class="filter-tabs" aria-label="记录筛选">
@@ -176,6 +197,30 @@ function toggleDay(date: string) {
       >
         里程碑
       </button>
+    </div>
+
+    <div class="timeline-filters">
+      <label class="search-field">
+        <Search :size="16" aria-hidden="true" />
+        <input
+          v-model="keyword"
+          type="search"
+          placeholder="搜标题、备注、照护内容或原话"
+          aria-label="搜索记录"
+        />
+      </label>
+      <div class="care-filter-tabs" aria-label="照护类别筛选">
+        <button
+          v-for="item in TIMELINE_CARE_FILTERS"
+          :key="item.id"
+          type="button"
+          :class="['filter-tab', { active: careFilter === item.id }]"
+          :aria-pressed="careFilter === item.id"
+          @click="careFilter = item.id"
+        >
+          {{ item.label }}
+        </button>
+      </div>
     </div>
 
     <div v-if="timeline.days.length" class="timeline">
@@ -222,6 +267,7 @@ function toggleDay(date: string) {
               @favorite="(id) => emit('favorite', id)"
             />
             <button
+              v-if="!hasQuery"
               class="care-fold care-fold-close"
               type="button"
               :aria-expanded="true"
@@ -246,8 +292,14 @@ function toggleDay(date: string) {
 
     <div v-else class="empty-state">
       <Star :size="28" aria-hidden="true" />
-      <h3>这一栏还没有记录</h3>
-      <p>新的照片和视频，会在你确认后出现在这里。</p>
+      <h3>{{ hasQuery ? "没有匹配的记录" : "这一栏还没有记录" }}</h3>
+      <p>
+        {{
+          hasQuery
+            ? "换个关键词或照护类别试试。"
+            : "新的照片和视频，会在你确认后出现在这里。"
+        }}
+      </p>
       <button
         class="button button-secondary"
         type="button"
@@ -376,6 +428,36 @@ function toggleDay(date: string) {
 .section-heading-row .muted {
   white-space: nowrap;
 }
+.timeline-filters {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
+}
+.search-field:focus-within {
+  border-color: var(--accent);
+}
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.care-filter-tabs,
 .filter-tabs {
   display: flex;
   gap: 8px;

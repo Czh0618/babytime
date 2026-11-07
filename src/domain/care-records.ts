@@ -23,6 +23,11 @@ export function addVoiceEntries(
   );
   const additions: GrowthEntry[] = [];
   const vaccinations = (workspace.vaccinations ??= []);
+  const activeBabyId = workspace.activeProfileId;
+  const activeProfile = workspace.profiles?.find(
+    (item) => item.id === activeBabyId,
+  );
+  const specialProgram = Boolean(activeProfile?.vaccinePlan?.specialProgram);
   for (const draft of drafts) {
     const error = validateVoiceDraft(draft);
     if (error) throw new Error(error);
@@ -31,16 +36,26 @@ export function addVoiceEntries(
     const entry = voiceDraftToEntry(draft, inputId);
     const entryError = validateEntry(entry);
     if (entryError) throw new Error(entryError);
-    additions.push({ ...entry, id: makeId(), favorite: false });
-    // 接种记录同时写进疫苗计划：关联到这支疫苗下一剂未种的剂次。
+    additions.push({
+      ...entry,
+      id: makeId(),
+      ...(activeBabyId ? { babyId: activeBabyId } : {}),
+      favorite: false,
+    });
+    // 接种记录同时写进疫苗计划：只按当前宝宝已种剂次与特殊程序关联下一剂未种剂次。
     if (draft.kind === "vaccination" && draft.vaccineCode) {
       if (!vaccinations.some((item) => item.inputId === inputId)) {
         const spec = VACCINE_BY_CODE[draft.vaccineCode];
+        const babyVaccinations = vaccinations.filter(
+          (item) => !item.babyId || !activeBabyId || item.babyId === activeBabyId,
+        );
         vaccinations.push({
           id: makeId(),
+          ...(activeBabyId ? { babyId: activeBabyId } : {}),
           code: draft.vaccineCode,
           name: spec?.name ?? draft.vaccineName,
-          dose: nextDose(vaccinations, draft.vaccineCode) ?? 1,
+          dose:
+            nextDose(babyVaccinations, draft.vaccineCode, specialProgram) ?? 1,
           date: draft.capturedAt.slice(0, 10),
           createdAt: new Date().toISOString(),
           inputId,

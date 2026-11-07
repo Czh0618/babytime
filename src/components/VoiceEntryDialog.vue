@@ -12,8 +12,10 @@ import {
 import ModalDialog from "./ModalDialog.vue";
 import {
   CARE_LABELS,
+  FEEDING_METHOD_LABELS,
   SITE_LABELS,
   type CareKind,
+  type FeedingMethod,
   type VoiceDraft,
 } from "../domain/care-types";
 import { localDateTime } from "../domain/date";
@@ -297,6 +299,13 @@ function changeKind(index: number, value: CareKind) {
     durationMinutes: undefined,
     sleepState: undefined,
     diaper: undefined,
+    feedingMethod: undefined,
+    breastSide: undefined,
+    leftMinutes: undefined,
+    rightMinutes: undefined,
+    feedingMinutes: undefined,
+    food: undefined,
+    reaction: undefined,
     temperatureC: undefined,
     site: undefined,
     medicineName: undefined,
@@ -307,6 +316,47 @@ function changeKind(index: number, value: CareKind) {
     heightCm: undefined,
     headCm: undefined,
   });
+}
+
+function setFeedingMethod(index: number, value: string) {
+  const current = drafts.value[index];
+  if (!current) return;
+  const method = (value || undefined) as FeedingMethod | undefined;
+  updateDraft(index, {
+    feedingMethod: method,
+    breastSide: undefined,
+    leftMinutes: undefined,
+    rightMinutes: undefined,
+    food: undefined,
+    reaction: undefined,
+    amountMl:
+      method === "breast" || method === "solid" ? undefined : current.amountMl,
+    feedingMinutes:
+      method === "solid" || method === "pump"
+        ? undefined
+        : current.feedingMinutes,
+  });
+}
+
+function setBreastMinutes(
+  index: number,
+  side: "left" | "right",
+  raw: string,
+) {
+  const current = drafts.value[index];
+  if (!current) return;
+  const value = numberInput(raw);
+  const leftMinutes = side === "left" ? value : current.leftMinutes;
+  const rightMinutes = side === "right" ? value : current.rightMinutes;
+  const breastSide =
+    leftMinutes && rightMinutes
+      ? "both"
+      : leftMinutes
+        ? "left"
+        : rightMinutes
+          ? "right"
+          : undefined;
+  updateDraft(index, { leftMinutes, rightMinutes, breastSide });
 }
 
 function pickVaccine(index: number, code: string) {
@@ -565,22 +615,142 @@ onBeforeUnmount(() => {
         >
           按现在记录（{{ localDateTime().slice(11) }}）
         </button>
-        <label v-if="draft.kind === 'feeding'" class="field"
-          ><span>奶量（毫升）<small>可选</small></span
-          ><input
-            :value="draft.amountMl ?? ''"
-            type="number"
-            min="0.1"
-            step="0.1"
-            inputmode="decimal"
-            @input="
-              updateDraft(index, {
-                amountMl: numberInput(
-                  ($event.target as HTMLInputElement).value,
-                ),
-              })
+        <template v-if="draft.kind === 'feeding'">
+          <label class="field"
+            ><span>喂养方式 <small>可选</small></span
+            ><select
+              :value="draft.feedingMethod ?? ''"
+              @change="
+                setFeedingMethod(
+                  index,
+                  ($event.target as HTMLSelectElement).value,
+                )
+              "
+            >
+              <option value="">未细分</option>
+              <option
+                v-for="(label, method) in FEEDING_METHOD_LABELS"
+                :key="method"
+                :value="method"
+              >
+                {{ label }}
+              </option>
+            </select></label
+          >
+          <div
+            v-if="draft.feedingMethod === 'breast'"
+            class="two-fields"
+          >
+            <label class="field"
+              ><span>左侧（分钟）<small>可选</small></span
+              ><input
+                :value="draft.leftMinutes ?? ''"
+                type="number"
+                min="1"
+                max="600"
+                inputmode="numeric"
+                @input="
+                  setBreastMinutes(
+                    index,
+                    'left',
+                    ($event.target as HTMLInputElement).value,
+                  )
+                "
+            /></label>
+            <label class="field"
+              ><span>右侧（分钟）<small>可选</small></span
+              ><input
+                :value="draft.rightMinutes ?? ''"
+                type="number"
+                min="1"
+                max="600"
+                inputmode="numeric"
+                @input="
+                  setBreastMinutes(
+                    index,
+                    'right',
+                    ($event.target as HTMLInputElement).value,
+                  )
+                "
+            /></label>
+          </div>
+          <template v-if="draft.feedingMethod === 'solid'">
+            <label class="field"
+              ><span>吃了什么 <small>可选</small></span
+              ><input
+                :value="draft.food ?? ''"
+                maxlength="30"
+                placeholder="例如：南瓜泥"
+                @input="
+                  updateDraft(index, {
+                    food:
+                      ($event.target as HTMLInputElement).value.trim() ||
+                      undefined,
+                  })
+                "
+            /></label>
+            <label class="field"
+              ><span>不适或过敏 <small>可选</small></span
+              ><input
+                :value="draft.reaction ?? ''"
+                maxlength="60"
+                placeholder="只记看到的情况"
+                @input="
+                  updateDraft(index, {
+                    reaction:
+                      ($event.target as HTMLInputElement).value.trim() ||
+                      undefined,
+                  })
+                "
+            /></label>
+          </template>
+          <label
+            v-if="
+              draft.feedingMethod !== 'breast' &&
+              draft.feedingMethod !== 'solid'
             "
-        /></label>
+            class="field"
+            ><span
+              >{{ draft.feedingMethod === "pump" ? "吸出量" : "奶量" }}（毫升）<small
+                >可选</small
+              ></span
+            ><input
+              :value="draft.amountMl ?? ''"
+              type="number"
+              min="0.1"
+              max="400"
+              step="0.1"
+              inputmode="decimal"
+              @input="
+                updateDraft(index, {
+                  amountMl: numberInput(
+                    ($event.target as HTMLInputElement).value,
+                  ),
+                })
+              "
+          /></label>
+          <label
+            v-if="
+              draft.feedingMethod !== 'solid' &&
+              draft.feedingMethod !== 'pump'
+            "
+            class="field"
+            ><span>喂奶时长（分钟）<small>可选</small></span
+            ><input
+              :value="draft.feedingMinutes ?? ''"
+              type="number"
+              min="1"
+              max="600"
+              inputmode="numeric"
+              @input="
+                updateDraft(index, {
+                  feedingMinutes: numberInput(
+                    ($event.target as HTMLInputElement).value,
+                  ),
+                })
+              "
+          /></label>
+        </template>
         <label v-if="draft.kind === 'sleep'" class="field"
           ><span>睡眠状态</span
           ><select

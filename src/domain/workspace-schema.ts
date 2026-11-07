@@ -18,6 +18,14 @@ const hasIds = (value: unknown) =>
     (item) => item && typeof item === "object" && typeof item.id === "string",
   );
 
+/** P6.5b：里程碑取消勾选的标记，可选且只接受短字符串数组。 */
+const validDeletedMilestones = (value: unknown): boolean =>
+  value === undefined ||
+  (Array.isArray(value) &&
+    value.every(
+      (item) => typeof item === "string" && item.length > 0 && item.length <= 200,
+    ));
+
 function isBabyProfile(value: unknown): value is BabyProfile {
   if (!value || typeof value !== "object") return false;
   const profile = value as Record<string, unknown>;
@@ -28,7 +36,8 @@ function isBabyProfile(value: unknown): value is BabyProfile {
     (profile.sex === undefined ||
       profile.sex === "male" ||
       profile.sex === "female") &&
-    (profile.dueDate === undefined || typeof profile.dueDate === "string")
+    (profile.dueDate === undefined || typeof profile.dueDate === "string") &&
+    validDeletedMilestones(profile.deletedMilestones)
   );
 }
 
@@ -178,7 +187,8 @@ function validBackupWorkspace(workspace: StoredWorkspace): boolean {
       data.profiles.every((item) => isBabyProfile(item) &&
         optionalString(item.id) &&
         (item.vaccinePlan === undefined || validVaccinePlan(item.vaccinePlan)) &&
-        (item.milestones === undefined || validMilestones(item.milestones))) &&
+        (item.milestones === undefined || validMilestones(item.milestones)) &&
+        validDeletedMilestones(item.deletedMilestones)) &&
       data.profiles.some((item) => item.id === data.activeProfileId)
     : isBabyProfile((data as LegacyLike).baby);
   return (

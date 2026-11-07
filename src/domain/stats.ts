@@ -89,15 +89,17 @@ export function aggregateByDay(
   return dates.map((date) => buckets.get(date)!);
 }
 
-export type TrendMetric = "intake" | "sleep" | "diaper";
+export type TrendMetric = "intake" | "feedingCount" | "sleep" | "diaper";
 
 export const TREND_METRICS: Array<{ id: TrendMetric; label: string; unit: string }> = [
   { id: "intake", label: "奶量", unit: "ml" },
+  { id: "feedingCount", label: "喂奶次数", unit: "次" },
   { id: "sleep", label: "睡眠", unit: "小时" },
   { id: "diaper", label: "尿布", unit: "次" },
 ];
 
 export function metricValue(day: DayStats, metric: TrendMetric): number {
+  if (metric === "feedingCount") return day.feedingCount;
   if (metric === "sleep") return day.sleepMinutes / 60;
   if (metric === "diaper") return day.diaperCount;
   return day.intakeMl;
@@ -119,12 +121,18 @@ export function nightSummary(
     const time = Date.parse(value);
     return time >= start.getTime() && time < end.getTime();
   };
-  const wakeCount = entries.filter(
-    (entry) =>
-      entry.care?.kind === "sleep" &&
-      entry.care.sleepState === "awake" &&
-      inWindow(entry.capturedAt),
-  ).length;
+  // 醒来可能是单独一条「醒来」，也可能是带时长睡眠的结束时刻（快记「醒来」、补记）。
+  const wakeCount =
+    entries.filter(
+      (entry) =>
+        entry.care?.kind === "sleep" &&
+        entry.care.sleepState === "awake" &&
+        inWindow(entry.capturedAt),
+    ).length +
+    segments.filter(
+      (segment) =>
+        segment.source === "duration" && segment.end && inWindow(segment.end),
+    ).length;
   let longestSleepMinutes = 0;
   for (const segment of segments) {
     if (!segment.end || segment.minutes === null) continue;

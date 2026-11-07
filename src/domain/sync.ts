@@ -85,13 +85,63 @@ function removeItem(workspace: Workspace, kind: ListKind, id: string) {
   else if (kind === "vaccination")
     workspace.vaccinations = (workspace.vaccinations ?? []).filter((item) => item.id !== id);
   else if (kind === "recap") workspace.recaps = workspace.recaps.filter((item) => item.id !== id);
-  // ponytail: 远端删除素材时本机若有原片字节不清理，与恢复备份一样留到孤儿原片回收。
+  // 远端删除素材元信息后，本机残留的原片由 workspace.ts 的孤儿回收清掉。
   else workspace.media = workspace.media.filter((item) => item.id !== id);
 }
 
 function dropDirty(workspace: Workspace, keys: Iterable<string>) {
   const gone = new Set(keys);
   workspace.syncDirty = (workspace.syncDirty ?? []).filter((key) => !gone.has(key));
+}
+
+/**
+ * 合并宝宝档案：同 id 的 milestones 按键求并集，避免两台设备同时勾选/改资料时丢键；
+ * 取消勾选靠 profiles 里的 deletedMilestones 标记传播（见 sync-meta.ts 的 stampChanges）。
+ * preferLocal 表示本机 profiles 有未推送修改：其它字段仍保留本机（后写者胜），
+ * 但远端新加的宝宝会补进来，合并结果随后由本轮推送带上服务端。
+ */
+export function mergeProfiles(
+  local: BabyProfile[],
+  remote: BabyProfile[],
+  preferLocal: boolean,
+): BabyProfile[] {
+  const localById = new Map(local.map((item) => [item.id, item]));
+  const remoteIds = new Set(remote.map((item) => item.id));
+  const merged = remote.map((item) => {
+    const mine = localById.get(item.id);
+    if (!mine) return item;
+    const removed = new Set([
+      ...(mine.deletedMilestones ?? []),
+      ...(item.deletedMilestones ?? []),
+    ]);
+    const values: Record<string, string> = { ...(mine.milestones ?? {}) };
+    const remoteValues = item.milestones ?? {};
+    for (const [key, value] of Object.entries(remoteValues)) {
+      values[key] = value;
+      removed.delete(key);
+    }
+    for (const key of item.deletedMilestones ?? [])
+      if (!remoteValues[key]) {
+        delete values[key];
+        removed.add(key);
+      }
+    for (const key of mine.deletedMilestones ?? [])
+      if (!remoteValues[key]) {
+        delete values[key];
+        removed.add(key);
+      }
+    for (const key of Object.keys(values)) removed.delete(key);
+    const base = preferLocal ? { ...mine } : { ...item };
+    if (Object.keys(values).length || item.milestones || mine.milestones || removed.size)
+      base.milestones = values;
+    else delete base.milestones;
+    if (removed.size) base.deletedMilestones = [...removed].sort();
+    else delete base.deletedMilestones;
+    return base;
+  });
+  if (preferLocal)
+    for (const item of local) if (!remoteIds.has(item.id)) merged.push(item);
+  return merged;
 }
 
 /**
@@ -143,12 +193,19 @@ export function applyPull(workspace: Workspace, pull: PullResult) {
     else list.push(next);
     changed++;
   }
-  if (pull.singletons.profiles && !dirty.has("profiles")) {
-    workspace.profiles = pull.singletons.profiles;
+  if (pull.singletons.profiles) {
+    const merged = mergeProfiles(
+      workspace.profiles,
+      pull.singletons.profiles,
+      dirty.has("profiles"),
+    );
+    if (JSON.stringify(merged) !== JSON.stringify(workspace.profiles)) {
+      workspace.profiles = merged;
+      changed++;
+    }
     // 远端删掉了当前宝宝时退回第一个，界面不会卡在空档案上。
     if (!workspace.profiles.some((profile) => profile.id === workspace.activeProfileId))
       workspace.activeProfileId = activeProfileOf(workspace).id ?? workspace.activeProfileId;
-    changed++;
   }
   dropDirty(workspace, cleared);
   return { kept, removed, changed };

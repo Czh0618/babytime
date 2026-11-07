@@ -50,7 +50,13 @@ const today = localDate();
 const filter = ref<"todo" | "all" | "done">("todo");
 const editing = ref("");
 const form = reactive({ date: today, clinic: "", lot: "" });
-const custom = reactive({ name: "", date: today });
+const custom = reactive({
+  name: "",
+  dose: "1",
+  date: today,
+  clinic: "",
+  lot: "",
+});
 
 const tasks = computed(() =>
   vaccineTasks(props.baby, props.plan, props.records, today),
@@ -143,15 +149,21 @@ function addToCalendar(task: VaccineTask) {
 
 function addCustom() {
   const name = custom.name.trim();
+  const dose = Math.max(1, Math.round(Number(custom.dose) || 1));
   if (!name || !custom.date) return;
   emit("addRecord", {
     code: "custom",
     name,
-    dose: 1,
+    dose,
     date: custom.date,
+    clinic: custom.clinic.trim() || undefined,
+    lot: custom.lot.trim() || undefined,
   });
   custom.name = "";
+  custom.dose = "1";
   custom.date = today;
+  custom.clinic = "";
+  custom.lot = "";
 }
 
 function chooseSide(group: "je" | "hepa", code?: string) {
@@ -409,7 +421,7 @@ function toggleSpecial(event: Event) {
         <div>
           <h2 class="section-heading">生长曲线</h2>
           <p class="muted">
-            只画你自己记录的测量点，不显示百分位参考线，也不判断偏高或偏低。
+            实线是你记录的测量点；填写性别后叠加国标百分位参考线，并客观描述所处区间，不判断偏高或偏低。
           </p>
         </div>
       </div>
@@ -432,6 +444,8 @@ function toggleSpecial(event: Event) {
         :label="metricSpec.label"
         :unit="metricSpec.unit"
         :corrected="corrected"
+        :sex="baby.sex"
+        :metric="metric"
       />
       <p v-else class="empty-hint">还没有{{ metricSpec.label }}记录。</p>
 
@@ -484,9 +498,10 @@ function toggleSpecial(event: Event) {
         >
       </p>
       <p class="source-line">
-        百分位参考需要《7 岁以下儿童生长标准》WS/T 423-2022
-        的原文数据，尚未录入，所以这里只显示家长自己的测量点。
-        早产宝宝把预产期填在家庭页后，横轴会用矫正月龄。
+        参考线录入自《7 岁以下儿童生长标准》WS/T 423—2022 附录 A（国家卫生健康委员会）：
+        体重、身长/身高为 0～6 岁 9 月龄，头围为 0～3 岁；原文百分位为
+        P3 / P10 / P25 / P50 / P75 / P90 / P97。这里只描述区间，不做发育判断，
+        具体请以医生为准。早产宝宝把预产期填在家庭页后，横轴会用矫正月龄。
       </p>
     </section>
 
@@ -521,10 +536,34 @@ function toggleSpecial(event: Event) {
           ><span>疫苗名称</span
           ><input v-model="custom.name" maxlength="30" placeholder="例如：13 价肺炎"
         /></label>
-        <label class="field"
-          ><span>接种日期</span
-          ><input v-model="custom.date" type="date" :max="today"
-        /></label>
+        <div class="two-fields">
+          <label class="field"
+            ><span>第几剂</span
+            ><input
+              v-model="custom.dose"
+              type="number"
+              min="1"
+              max="20"
+              inputmode="numeric"
+          /></label>
+          <label class="field"
+            ><span>接种日期</span
+            ><input v-model="custom.date" type="date" :max="today"
+          /></label>
+        </div>
+        <div class="two-fields">
+          <label class="field"
+            ><span>门诊 <small>可选</small></span
+            ><input
+              v-model="custom.clinic"
+              maxlength="30"
+              placeholder="例如：社区接种门诊"
+          /></label>
+          <label class="field"
+            ><span>批号 <small>可选</small></span
+            ><input v-model="custom.lot" maxlength="30"
+          /></label>
+        </div>
         <button
           class="button button-secondary"
           type="submit"
@@ -535,8 +574,14 @@ function toggleSpecial(event: Event) {
       </form>
       <ul v-if="customRecords.length" class="custom-list">
         <li v-for="item in customRecords" :key="item.id">
-          <span>{{ item.name || "自费疫苗" }}</span>
-          <span class="muted">{{ fullDate(item.date) }}</span>
+          <div class="custom-item-main">
+            <strong>{{ item.name || "自费疫苗" }} · 第 {{ item.dose }} 剂</strong>
+            <span class="muted"
+              >{{ fullDate(item.date)
+              }}<template v-if="item.clinic"> · {{ item.clinic }}</template
+              ><template v-if="item.lot"> · 批号 {{ item.lot }}</template></span
+            >
+          </div>
           <button
             class="button button-ghost small"
             type="button"
@@ -771,9 +816,21 @@ function toggleSpecial(event: Event) {
   border-bottom: 1px solid var(--line);
   font-size: 14px;
 }
-.custom-list li span:first-child {
+.custom-list li span:first-child,
+.custom-item-main {
   flex: 1;
   min-width: 0;
+}
+.custom-item-main {
+  display: grid;
+  gap: 2px;
+}
+.custom-item-main strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.custom-item-main .muted {
+  font-size: var(--font-xs);
 }
 .empty-hint {
   margin: 0;

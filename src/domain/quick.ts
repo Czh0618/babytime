@@ -49,3 +49,51 @@ export function quickCareDraft(kind: QuickKind, now = new Date()): EntryDraft {
 export function quickActionLabel(kind: QuickKind): string {
   return QUICK_ACTIONS.find((item) => item.id === kind)!.label;
 }
+
+/**
+ * 点「醒来」时把进行中的「睡着」补成一段睡眠：改同一条记录，不另起一条。
+ * 不足 1 分钟（或时钟回拨）按 1 分钟记，避免保存时被判成 0。
+ */
+export function wakeUpCare(
+  care: CareObservation,
+  asleepAt: string,
+  now = new Date(),
+): CareObservation {
+  const minutes = Math.round((now.getTime() - Date.parse(asleepAt)) / 60_000);
+  return {
+    ...care,
+    sleepState: "duration",
+    durationMinutes: Math.max(1, minutes),
+    sourceText: [care.sourceText, "快记：醒来"].filter(Boolean).join("；"),
+  };
+}
+
+/**
+ * 补记一段睡眠：只填「几点睡着、几点醒来」（HH:mm）。醒来取不晚于现在的最近一次，
+ * 睡着取醒来之前的最近一次，跨午夜自动算到前一天；没填或两个时间相同返回 null。
+ */
+export function manualSleepDraft(
+  asleep: string,
+  awake: string,
+  now = new Date(),
+): EntryDraft | null {
+  const clock = /^(\d{2}):(\d{2})/;
+  const a = clock.exec(asleep);
+  const b = clock.exec(awake);
+  if (!a || !b || asleep === awake) return null;
+  const end = new Date(now);
+  end.setHours(Number(b[1]), Number(b[2]), 0, 0);
+  if (end > now) end.setDate(end.getDate() - 1);
+  const start = new Date(end);
+  start.setHours(Number(a[1]), Number(a[2]), 0, 0);
+  if (start >= end) start.setDate(start.getDate() - 1);
+  return {
+    ...quickCareDraft("asleep", start),
+    care: {
+      kind: "sleep",
+      sleepState: "duration",
+      durationMinutes: Math.round((end.getTime() - start.getTime()) / 60_000),
+      sourceText: `补记：${asleep} 睡着，${awake} 醒来`,
+    },
+  };
+}

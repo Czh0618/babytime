@@ -259,6 +259,50 @@ export async function removeMediaAndWorkspace(
   });
 }
 
+/** 纯函数：本机原片里不再被任何记录引用的 id。 */
+export function orphanMediaIds(
+  storedIds: Iterable<string>,
+  keepIds: Iterable<string>,
+): string[] {
+  const keep = new Set(keepIds);
+  return [...new Set(storedIds)].filter((id) => !keep.has(id));
+}
+
+/**
+ * 孤儿原片回收：在同一个事务里列出 media 表的全部 key，删掉不在 keepIds 里的原片。
+ * 调用方要先更新 workspace 里的引用，并把自己刚写入、还没进 workspace 的 id 一起传进来。
+ * 返回删除条数；清理失败不影响主流程，由调用方决定如何处理。
+ */
+export async function pruneOrphanMedia(
+  keepIds: Iterable<string>,
+): Promise<number> {
+  const keep = new Set([...keepIds].map(String));
+  const database = await openDatabase();
+  return new Promise<number>((resolve, reject) => {
+    let transaction: IDBTransaction;
+    try {
+      transaction = database.transaction(MEDIA_STORE, "readwrite");
+    } catch (error) {
+      reject(storageError(error));
+      return;
+    }
+    const store = transaction.objectStore(MEDIA_STORE);
+    let removed = 0;
+    const request = store.getAllKeys();
+    request.onsuccess = () => {
+      for (const id of orphanMediaIds(request.result.map(String), keep)) {
+        removed++;
+        store.delete(id);
+      }
+    };
+    request.onerror = () => reject(storageError(request.error));
+    transaction.onerror = () => reject(storageError(transaction.error));
+    transaction.onabort = () =>
+      reject(storageError(transaction.error ?? new Error("清理孤儿原片失败")));
+    transaction.oncomplete = () => resolve(removed);
+  });
+}
+
 export async function clearAllData(): Promise<void> {
   const database = await openDatabase();
   const transaction = database.transaction(

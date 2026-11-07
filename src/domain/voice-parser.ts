@@ -14,9 +14,9 @@ import { matchVaccine } from "../data/vaccines-2026.ts";
 
 const NEGATIVE = /(?:没(?:有)?|没有|还没|尚未|未|不曾|不用|不要)/;
 const TIME_PATTERN =
-  /(?:(今天|昨天|前天)\s*)?(?:(凌晨|早上|上午|中午|下午|傍晚|晚上)\s*)?([0-9零〇一二两三四五六七八九十百]+)\s*(?:(?:点|时)(?:(半|一刻|三刻)|\s*([0-9零〇一二两三四五六七八九十百]+)\s*分?)?|[:：]\s*([0-9]{1,2}))/;
+  /(?:(今天早上|今早|昨天晚上|昨晚|今天|昨天|前天)\s*)?(?:(凌晨|早上|上午|中午|下午|傍晚|晚上)\s*)?([0-9零〇一二两三四五六七八九十百]+)\s*(?:(?:点|时)(?:(半|一刻|三刻)|\s*([0-9零〇一二两三四五六七八九十百]+)\s*分?)?|[:：]\s*([0-9]{1,2}))/;
 const RELATIVE_PATTERN =
-  /(刚刚|刚才|现在|此刻|半小时前|一小时前|两小时前|[0-9零〇一二两三四五六七八九十百]+小时前)/;
+  /(刚刚|刚才|现在|此刻|半小时前|一小时前|两小时前|[0-9零〇一二两三四五六七八九十百]+(?:个)?小时前|[0-9零〇一二两三四五六七八九十百]+分钟前)/;
 
 function chineseNumber(value: string): number | undefined {
   if (/^\d+$/.test(value)) return Number(value);
@@ -80,8 +80,12 @@ function parseTime(
   const relative = text.match(RELATIVE_PATTERN)?.[1];
   if (relative) {
     const date = cloneDate(now);
-    if (relative.includes("小时前")) {
-      const hoursText = relative.replace("小时前", "");
+    if (relative.includes("分钟前")) {
+      const minutesText = relative.replace("分钟前", "");
+      const minutes = chineseNumber(minutesText) ?? 1;
+      date.setMinutes(date.getMinutes() - minutes);
+    } else if (relative.includes("小时前")) {
+      const hoursText = relative.replace(/(?:个)?小时前/, "");
       const hours = hoursText === "半" ? 0.5 : (chineseNumber(hoursText) ?? 1);
       date.setMinutes(date.getMinutes() - hours * 60);
     }
@@ -105,7 +109,13 @@ function parseTime(
   if (hour === undefined || minute === undefined || hour > 23 || minute > 59) {
     return { value: "", ambiguous: true, hint: match[0] };
   }
-  const effectivePeriod = period || inheritedPeriod;
+  const impliedPeriod =
+    dayWord === "昨晚" || dayWord === "昨天晚上"
+      ? "晚上"
+      : dayWord === "今早" || dayWord === "今天早上"
+        ? "早上"
+        : undefined;
+  const effectivePeriod = period || impliedPeriod || inheritedPeriod;
   const vagueTime =
     /(?:点|时)\s*(?:多|左右|来?钟头?)/.test(match[0] ?? "") ||
     /(?:点|时)(?:多|左右)/.test(
@@ -118,7 +128,8 @@ function parseTime(
   if (!effectivePeriod && hour <= 12)
     return { value: "", ambiguous: true, hint: match[0] };
   const date = cloneDate(now);
-  if (dayWord === "昨天") date.setDate(date.getDate() - 1);
+  if (dayWord === "昨天" || dayWord === "昨晚" || dayWord === "昨天晚上")
+    date.setDate(date.getDate() - 1);
   if (dayWord === "前天") date.setDate(date.getDate() - 2);
   let normalizedHour = hour;
   if (effectivePeriod === "凌晨" && normalizedHour === 12) normalizedHour = 0;
@@ -136,7 +147,7 @@ function parseTime(
   return {
     value: localDateTime(date),
     ambiguous: false,
-    period: period || inheritedPeriod,
+    period: period || impliedPeriod || inheritedPeriod,
     hint: match[0],
   };
 }
@@ -152,7 +163,7 @@ function splitClauses(text: string): string[] {
       "$1 ",
     )
     .replace(
-      /(奶|尿布|尿不湿|便便|睡着了?|入睡)\s*(?=(?:(?:今天|昨天|前天)?(?:凌晨|早上|上午|中午|下午|傍晚|晚上)?[0-9零〇一二两三四五六七八九十百]+\s*(?:点|时)))/g,
+      /(奶|尿布|尿不湿|便便|睡着了?|入睡)\s*(?=(?:(?:今天早上|今早|昨天晚上|昨晚|今天|昨天|前天)?(?:凌晨|早上|上午|中午|下午|傍晚|晚上)?[0-9零〇一二两三四五六七八九十百]+\s*(?:点|时)))/g,
       "$1，",
     )
     .split(/[，,。；;！!？?\n]+/)
@@ -354,14 +365,14 @@ function parseClause(
   let parsedTime = parseTime(clause, now, inheritedPeriod);
   if (
     kind !== "note" &&
-    /(?:今天|昨天|前天)/.test(clause) &&
+    /(?:今天早上|今早|昨天晚上|昨晚|今天|昨天|前天)/.test(clause) &&
     !TIME_PATTERN.test(clause) &&
     !RELATIVE_PATTERN.test(clause)
   ) {
     parsedTime = {
       value: "",
       ambiguous: true,
-      hint: clause.match(/今天|昨天|前天/)?.[0],
+      hint: clause.match(/今天早上|今早|昨天晚上|昨晚|今天|昨天|前天/)?.[0],
     };
   }
   const durationMinutes =
@@ -500,9 +511,13 @@ export function parseVoiceTranscript(
       continue;
     }
     const draft = parseClause(clause, now, inheritedPeriod);
-    const explicitPeriod = clause.match(
-      /凌晨|早上|上午|中午|下午|傍晚|晚上/,
-    )?.[0];
+    const explicitPeriod =
+      clause.match(/凌晨|早上|上午|中午|下午|傍晚|晚上/)?.[0] ??
+      (/昨晚|昨天晚上/.test(clause)
+        ? "晚上"
+        : /今早|今天早上/.test(clause)
+          ? "早上"
+          : undefined);
     if (explicitPeriod) inheritedPeriod = explicitPeriod;
     result.push(draft);
   }

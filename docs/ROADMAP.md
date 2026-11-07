@@ -137,9 +137,9 @@
   - 验收：给应种日期计算写测试（生日为月末、闰年 2 月 29 日；“6 月龄”按自然月加 6 处理，月末顺延到当月最后一天）。
 - [x] **P2.4 生长曲线**
   - 新增身高、体重、头围记录（新 `CareKind: "measurement"`，或独立数组，二选一后记录理由）。语音示例：“今天量了体重7.2公斤，身高65厘米”生成一条。
-  - 百分位参考采用国家卫生行业标准 **WS/T 423-2022《7 岁以下儿童生长标准》**。静态表需由实现者从标准原文录入（P3/P15/P50/P85/P97），并在文件头注明出处；**不得凭记忆编数据**，拿不到原文就先只画家长自己的折线、不画参考线。
+  - 百分位参考采用国家卫生行业标准 **WS/T 423-2022《7 岁以下儿童生长标准》**。静态表需由实现者从标准原文录入，并在文件头注明出处；**不得凭记忆编数据**，拿不到原文就先只画家长自己的折线、不画参考线。（2026-11-07 P6.4a 实现时已取得官方 PDF 原文：附录 A 的百分位是 P3/P10/P25/P50/P75/P90/P97，初稿写的 P15/P85 并不存在；体重/身高表到 6 岁 9 月龄，头围表只到 3 岁，一律按原文录入。）
   - 需要 `sex`；有 `dueDate` 且早产时，2 周岁前按矫正月龄绘制。
-  - 文案只写“位于 P50–P85 区间”，不写“偏胖/偏矮”。
+  - 文案只写“位于 P…–P… 区间”，不写“偏胖/偏矮”。
 - [x] **P2.5 里程碑清单**
   - 在现有 CDC 内容（`AgeGuideCard`）的条目上加勾选和达成日期，存进 workspace。
   - 每个阶段保留原有“何时咨询医生”提示。
@@ -174,6 +174,32 @@
 
 - [x] **P5.1 设计：**（`docs/MULTI-BABY.md`，2026-11-07 已确认）`Workspace.profile` 改为 `profiles[]` 加 `activeProfileId`，记录加 `babyId`。写迁移函数（旧数据归入唯一的宝宝），兼容旧备份导入，并给出回滚方案（导出单个宝宝的旧格式）。
 - [x] **P5.2 实现：** 顶部切换宝宝，统计、疫苗、生长曲线都按宝宝隔离。
+
+## P6 功能优化与边界修复（Review 改进清单）
+
+按优先级从高到低排列，逐项实现并验证：
+
+- [x] **P6.1 多宝宝与疫苗推算漏洞修复（P0 缺陷修复）**
+  - a. `exportCsv` 改为导出当前宝宝的 `entries`（不再把多宝宝全量 `workspace.entries` 混入同一份单宝宝命名的 CSV）。
+  - b. `addVoiceEntries` 语音录入疫苗关联 `nextDose` 时，只按当前宝宝的接种记录推算，并传入当前宝宝 `vaccinePlan.specialProgram`（支持乙肝 0/1/2/7 月龄 4 剂特殊程序）。
+  - c. `ActiveTimer` 绑定可选 `babyId`：计时与当前宝宝关联，顶部切换宝宝时计时器按宝宝隔离显示与落库。
+- [x] **P6.2 睡眠快记、进行中状态与补记体验统一（P1 核心体验）**
+  - a. `ongoingSleep` 识别 24 小时内未闭合的「睡着」记录；`TodayCareSummary` 在宝宝正在睡时直接显示「正在睡 · HH:mm 入睡」。
+  - b. 点快记「醒来」时，若当前有进行中的「睡着」，直接把同一条记录补成带 `durationMinutes` 的睡眠段（`wakeUpCare`），12 秒内撤销可恢复回原「睡着」记录；`nightSummary` 将此类时长记录的结束时刻同样计入夜醒次数。
+  - c. `QuickLogCard` 新增「补记一觉」（填睡着时间、醒来时间 `HH:mm`，跨午夜自动推算）；`timer.ts` 收敛为专用于亲喂分侧计时，旧版残留的 `"sleep"` 计时安全忽略。
+- [x] **P6.3 快记即时补填与语音草稿细分编辑（P1 日常高频）**
+  - a. `QuickLogCard` 快记后的 12 秒提示条增加「补充详情」按钮，点击直接打开刚记下记录的 `EntryEditor`（方便立即补奶量、尿布湿/脏等）。
+  - b. `VoiceEntryDialog` 草稿卡片在 `kind === "feeding"` 时补齐喂养方式、亲喂左右分钟、喂奶时长、辅食名称与不适反应的编辑控件（与 `EntryEditor` 对齐，解决 P1.2 遗留项）。
+  - c. `voice-parser.ts` 扩展口语时间解析：支持 `X分钟前`（如“二十分钟前”）、`昨晚 / 昨天晚上 / 今早 / 今天早上`。
+- [x] **P6.4 健康档案、趋势图与时间线检索增强（P2 深度优化）**
+  - a. **生长曲线百分位参考（P2.4 补完）**：按 WS/T 423-2022《7 岁以下儿童生长标准》附录 A **原文**录入男/女童体重、身长/身高（0～6 岁 9 月龄）与头围（0～3 岁）的 P3 / P10 / P25 / P50 / P75 / P90 / P97 参考表；填写性别后在 `GrowthChart.vue` 绘制 P3 / P25 / P50 / P75 / P97 参考线，并显示“位于 P…–P… 区间”客观描述。（**与初稿的偏差**：标准原文没有 P15 / P85，头围表只到 3 岁；一律按原文录入，不推算、不补值。）
+  - b. **自费疫苗完善**：`HealthView.vue` 自费疫苗支持填写第几剂（`dose`）、接种门诊与批号，并支持撤销/删除。
+  - c. **趋势图增强**：`TREND_METRICS` 增加「喂奶次数」指标（照顾纯亲喂无毫升数的宝宝）；点击柱状图柱子可查看当天具体数值摘要。
+  - d. **时间线搜索与分类筛选**：`TimeView.vue` 增加关键词搜索（匹配标题、备注、照护内容、原话）及照护类别筛选（喂奶/睡眠/换尿布/体温/用药），搜索或按照护类别筛选时自动展开匹配记录。
+- [x] **P6.5 同步合并颗粒度、孤儿原片回收与多标签页保护（P2 健壮性）**
+  - a. **孤儿原片回收（Orphan Media GC）**：`storage.ts` 新增 `pruneOrphanMedia(keepIds)`，在恢复备份、删除宝宝、远端同步删除素材后自动清理 IndexedDB `media` 表中不再被引用的原片。
+  - b. **多设备同步 `profiles` 合并优化**：`applyPull` 合并 `profiles` 时对同 id 宝宝的 `milestones` 按键求并集，减少多设备同时勾选里程碑与修改资料时的覆盖丢失。
+  - c. **多标签页同步保护**：通过 `BroadcastChannel` 监听同浏览器其他标签页的写入，收到通知后刷新本页内存中的 `workspace`，防止旧标签页覆盖新数据。
 
 ## AI 融入设计
 
@@ -292,3 +318,5 @@
 - P4.3 + P4.4（2026-11-07）：**服务端** `server/sync.ts`（单文件、只用 `node:http` + `node:sqlite`）：`/sync/health`、`/sync/pull`、`/sync/push`、`/sync/reset`；Bearer 家庭密钥用 `timingSafeEqual` 比对，非 HTTPS（`X-Forwarded-Proto`）一律 400，请求体上限 1 MB，只做结构校验；`pull` 跳过本设备写入、服务端时钟严格递增（同毫秒内多次写入也能被 `since` 区分），每次 `pull` 顺带清掉 90 天前的墓碑；`push` 遇到已删除的墓碑拒绝复活（`rejected[]`），内容未变不计写入。**客户端** `domain/sync.ts`：`buildPush`（按 `syncDirty` + 全量首推取键，剔除示例与对象 URL）、`applyPull`（远端删除总胜出、本机未推修改保留并成后写者、素材保留本机预览地址）、`finishPush`（按内容指纹只清没再改的键）、`chunkPush`、`runSync`（先拉后推，网络层可注入）；`lib/sync-service.ts` 存密钥与 `since`、`isSecureContext` 判断并给出中文错误；`lib/workspace.ts` 在成功写入后 3 秒防抖推送，启动、切回前台、恢复备份、重新联网时同步，合并走同一写入队列但不盖章；家庭页新增「多设备同步」行（状态、上次同步、立即同步、设置）与 `SyncSettingsDialog`（密钥、开关、隐私说明），清空本机数据时一并清除家庭密钥。**部署**：`.deploy.env` 加 `DEPLOY_SYNC=1`（仅 `ip-https` / `domain`）后 `deploy-remote.sh` 建系统用户、装 `sync.ts`、生成密钥写 `/etc/babytime-sync.env`（首次打印一次）、systemd 只监听 `127.0.0.1:8787`，Nginx 只在 443 反代 `/sync/` 并带 `X-Forwarded-Proto`，装完自检健康检查；卸载步骤写进 README。**验证**：224 项测试（新增 `tests/sync.test.ts` 7 项覆盖推拉、后写者胜、删除不复活（两种顺序）、里程碑并集与取消、旧备份全量同步、鉴权/HTTPS/1 MB/结构校验、墓碑 TTL），类型检查与生产构建通过；本机 `127.0.0.1` 与 `localhost` 两个来源（存储隔离，等同两台设备）实测：A 记一条 → B 刷新可见；B 记一条 → A 可见；A 离线记 6 条，恢复网络后自动补齐到服务端；A 删除 → 服务端墓碑、B 拉取后消失；A/B 同时改同一条 → 后写者胜并提示「1 条两边都改过，保留了这台设备的版本」；全程无控制台报错。**P4.4**：家庭页「谁能看到记录」按同步开关给两种文案，同步设置弹窗列出同步内容与原片不上传，README 增「多设备同步（可选）」、数据边界与已知限制同步改写。**遗留**：尚未在真实服务器上部署（需先在服务器装 Node ≥ 22.18 并重新 `npm run deploy`）；iPhone 真机同步待实测；素材元信息跨设备后仍显示「原片不在这台设备」，按需拉取原片不在本期范围。
 - P5.1（2026-11-07）：写完 `docs/MULTI-BABY.md`——数据结构（`profiles[]` + `activeProfileId`，记录加可选 `babyId`，疫苗计划与里程碑搬进各自的宝宝档案）、迁移函数（旧 workspace 与旧备份都归入唯一宝宝、幂等、旧版 `isWorkspace` 要求顶层 `baby` 的兼容问题与两个选项）、界面（顶部切换 + 按宝宝过滤）、同步延伸（`singletons.baby` → `profiles`，`activeProfileId` 只做本机偏好）、统计与领域函数的边界、测试计划、回滚（导出当前宝宝旧格式）与 6 个待确认问题。**按 ROADMAP 要求停在这里**，未改任何数据结构。验证：仅文档新增，224 项测试、类型检查、生产构建仍通过。
 - P5.1 + P5.2（2026-11-07，同一批结构改动，合并为一个提交）：**设计** `docs/MULTI-BABY.md`：宝宝档案改为 `profiles[]` + `activeProfileId`，记录加可选 `babyId`，疫苗计划与里程碑搬进各自的档案；用户确认「计划与里程碑进档案、顶部切换、不留顶层 baby 镜像（回滚靠导出旧格式）、同步不留兼容期、删除宝宝走墓碑且最后一个不能删」。**迁移** 新增 `domain/profiles.ts` 的 `migrateProfiles`：旧 workspace / 旧备份归一成 `profiles[]`，旧数据归入固定 id `default` 的唯一宝宝（两台设备各自升级后记录能合并，不会因随机 id 在对方设备上消失），记录补 `babyId`，计划与里程碑搬进档案，旧的里程碑墓碑与 `baby`/`vaccinePlan`/`milestone:*` 待推键清理并记一次 `profiles` 推送；幂等，`load()` 与 `restore()` 都会跑。`workspace-schema.ts` 新旧结构都接受、备份校验两种形状都覆盖。**存储与状态** `lib/workspace.ts` 新增 `profiles` / `activeProfile` 与按当前宝宝过滤的 `entries` / `media` / `recaps` / `vaccinations` / `milestones` / `vaccinePlan`；所有写入经 `update()` 统一给新条目补 `babyId`；`saveProfile` / `saveVaccinePlan` / `saveMilestones` 只改当前档案；新增 `addProfile`（保存后自动切过去）、`switchProfile`（只改本机）、`deleteProfile`（移出该宝宝的记录与素材并写墓碑，至少保留一个）。**界面** 顶部（存在多个宝宝时）显示「当前宝宝」下拉；家庭页档案卡支持「添加宝宝」「取消添加」「删除这个宝宝」，统计按当前宝宝；时间线、今日照护、交接、趋势、回顾、健康（疫苗/生长曲线/里程碑）、待整理都只显示当前宝宝的记录。**同步** `singletons.baby` 改为 `profiles`（整组后写者胜），服务端 `SINGLETONS` 与校验同步调整、删除里程碑表与 `milestones` 入参；`activeProfileId` 不进同步；记录 payload 自带 `babyId`。**回滚** 家庭页新增「导出当前宝宝的旧格式」，`legacyWorkspaceOf` 只取当前宝宝的记录、计划与里程碑回到顶层，旧版前端可直接恢复。验证：229 项测试（新增 `tests/profiles.test.ts` 4 项：旧结构迁移与幂等、activeProfileId 失效退回、旧备份往返、旧格式导出；`tests/sync.test.ts` 改为档案整体同步），类型检查与生产构建通过；浏览器实测（旧 P4 数据自动迁移、添加「弟弟」后自动切换且今日页为空、切回原宝宝记录回来、删除宝宝后剩一个档案且记录保留、两台设备加宝宝/记一条/删除都同步过去），375px 与 320px 四个页面无横向溢出，控制台无报错。**遗留**：宝宝档案整组同步意味着两台设备同时添加不同宝宝时后者覆盖前者（设计已接受）；iPhone 真机未测；同步上线仍需服务器装 Node ≥ 22.18 后重新部署。
+- P6.1–P6.5（2026-11-07，同一批 review 改进，合并为一次验收）：**P6.1** `exportCsv` 改用当前宝宝 `entries`；`care-records.addVoiceEntries` 的 `nextDose` 只按当前宝宝接种记录并传入该宝宝 `vaccinePlan.specialProgram`（`vaccines.nextDose` 新增可选参数）；`ActiveTimer` 带可选 `babyId`，`lib/timer.ts` 改为按宝宝并存多条计时（兼容旧单对象格式、同宝宝去重），App 只显示/结束当前宝宝的计时，结束草稿经 `tagActiveBaby` 归当前宝宝。**P6.2** `sleep.ongoingSleep`（24 小时上限）、今日卡片「正在睡」、`quick.wakeUpCare` 把进行中的睡着补成同一条时长记录（12 秒撤销恢复原状）、`nightSummary` 把时长记录结束时刻计入夜醒、`QuickLogCard` 的「补记一觉」（HH:mm 跨午夜）；`timer.ts` 收敛为亲喂分侧专用（旧 `sleep` 计时被 `parseActiveTimer` 安全忽略，UI 去掉「开始睡觉」）。**P6.3** 快记提示条「补充详情」直接开 `EntryEditor`、语音喂养草稿补齐方式/左右分钟/时长/辅食/不适反应、口语解析支持「二十分钟前 / 昨晚 / 昨天晚上 / 今早 / 今天早上」。**P6.4** a 从国家卫健委官方 PDF 提取 WS/T 423—2022 附录 A 六张表（`src/data/growth-standard-2022.ts`，文件头注明出处、表号与提取校验），`domain/growth-percentiles.ts` 做查表/相邻行插值/客观区间描述，`GrowthChart.vue` 填了性别才画 P3/P25/P50/P75/P97 参考线；b 自费疫苗支持剂次/门诊/批号与删除；c `TREND_METRICS` 加「喂奶次数」、点柱子看单日摘要；d `domain/timeline.ts` 加关键词与照护类别筛选纯函数，`TimeView.vue` 加搜索框/类别标签并在筛选时自动展开命中记录。**P6.5** a `storage.pruneOrphanMedia(keepIds)` + `domain/media-refs.referencedMediaIds`，恢复备份、删除宝宝、远端同步删素材后自动回收；b `sync.mergeProfiles` 对同 id 宝宝 `milestones` 按 key 求并集（本机有未推送修改时也合并，合并结果随本轮推送），取消勾选由 `stampChanges` 写入可选 `deletedMilestones` 并随 profiles 传播，`workspace-schema.ts` 同步放宽校验；c `lib/peer-refresh.ts` + `lib/workspace.ts` 用 `BroadcastChannel` 广播每次写入，其它标签页重读 IndexedDB 刷新内存、保留本机 `activeProfileId`、不回播。**与初稿偏差**：标准原文百分位是 P3/P10/P25/P50/P75/P90/P97（没有 P15/P85），头围表只到 3 岁、体重/身高到 6 岁 9 月龄，按 ROADMAP「不得凭记忆编数据」一律以原文为准，已在 P6.4a 条目改写；睡眠计时按 P6.2c 收敛删除，改由快记/补记承担。**验证**：`npm test` 256 项全通过（新增 `tests/growth-percentiles.test.ts` 4 项、`timeline-search.test.ts` 3 项、`sync-profiles.test.ts` 5 项、`orphan-media.test.ts` 3 项含极简 fake IndexedDB 端到端回收、`peer-refresh.test.ts` 2 项，并重写 `timer.test.ts` 11 项）；`npm run check`、`npm run build` 全通过；旧 workspace / 旧备份仍通过 `isWorkspace` 与备份往返测试，同步既有 22 项测试（含里程碑取消勾选、删除不复活）全通过。**遗留**：百分位表提取脚本是一次性的（官方 PDF 下载地址已写在数据文件头），未入库；浏览器 375/320px 排版、真实 IndexedDB 事务下的 GC、两个真实标签页的 BroadcastChannel 刷新、两台真机同时勾选里程碑，均待浏览器/真机实测；未填性别、头围超过 3 岁或月龄超过表格范围时不画参考线也不给区间描述。
+- P6 浏览器实测补充（2026-11-07 晚）：用 Tabbit CLI 在真实浏览器里验证 375/320px 五个页面无横向溢出、时间线搜索与类别筛选、国标参考线与区间文案、真实 IndexedDB 事务下的孤儿回收、两个标签页双向广播刷新、补记一觉 / 快记补充详情 / 趋势点柱 / 自费疫苗添加删除 / 语音草稿细分控件 / 旧 `sleep` 计时兼容；全部通过，工作区数据已还原，最后一次重载 `pageerror=0`。因此上一条里「375/320px 排版、真实 IndexedDB 事务下的 GC、两个真实标签页刷新」三项遗留解除；仍待实测：两台真机 + 同步服务的里程碑并集与取消传播，备份恢复 / 删除宝宝 / 远端删除素材三条 GC 触发路径的端到端，以及 iPhone 真机与 320px 截图目视。详见 `docs/VALIDATION.md` 与 `docs/TASKS.md`。

@@ -77,6 +77,25 @@ test("昨夜醒来次数与最长连续睡眠只统计窗口内", () => {
   assert.equal(summary.longestSleepMinutes, 240); // 22:00→02:00
 });
 
+test("快记「醒来」补成的时长记录，结束时刻同样算一次夜醒", () => {
+  const span = (capturedAt: string, durationMinutes: number): GrowthEntry => ({
+    ...sleepEntry(capturedAt, "asleep"),
+    care: { kind: "sleep", sleepState: "duration", durationMinutes, sourceText: "快记" },
+  });
+  const entries = [
+    span("2026-11-06T21:00", 300), // 02:00 醒
+    span("2026-11-07T02:30", 150), // 05:00 醒
+    span("2026-11-07T05:30", 60), // 06:30 醒，窗口外
+  ];
+  const summary = nightSummary(
+    entries,
+    deriveSleepSegments(entries),
+    new Date(2026, 10, 7, 12, 0),
+  );
+  assert.equal(summary.wakeCount, 2);
+  assert.equal(summary.longestSleepMinutes, 240); // 22:00→02:00
+});
+
 // WCAG 2.1 相对亮度与对比度，用于验证深浅两套主题的主要文字色。
 function luminance(hex: string): number {
   const channels = hex

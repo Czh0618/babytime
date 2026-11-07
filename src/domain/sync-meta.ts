@@ -86,7 +86,18 @@ export function stampChanges(
   next.tombstones = tombstones.filter(
     (item) => !live.has(`${item.kind}:${item.id}`),
   );
-  // 宝宝档案（含各自的疫苗计划与里程碑）整体同步，后写者胜。
+  // 里程碑取消勾选要随 profiles 一起同步：否则另一台设备合并时会把已取消的键并回来。
+  const previousProfiles = new Map(prev.profiles.map((item) => [item.id, item]));
+  for (const profile of next.profiles) {
+    const was = previousProfiles.get(profile.id);
+    const removed = new Set(profile.deletedMilestones ?? []);
+    for (const key of Object.keys(was?.milestones ?? {}))
+      if (!(profile.milestones ?? {})[key]) removed.add(key);
+    for (const key of Object.keys(profile.milestones ?? {})) removed.delete(key);
+    if (removed.size) profile.deletedMilestones = [...removed].sort();
+    else delete profile.deletedMilestones;
+  }
+  // 宝宝档案（含各自的疫苗计划与里程碑）整体同步，里程碑按 key 合并，其余后写者胜。
   if (!sameJson(prev.profiles, next.profiles)) {
     next.profilesUpdatedAt = now;
     dirty.add("profiles");

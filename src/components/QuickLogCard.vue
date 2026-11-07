@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Moon, Play, Square } from "@lucide/vue";
+import { Play, Square } from "@lucide/vue";
 import {
   elapsedSeconds,
   feedingSideMinutes,
   formatClock,
   type ActiveTimer,
-  type TimerKind,
   type TimerSide,
 } from "../domain/timer";
 import { QUICK_ACTIONS, type QuickKind } from "../domain/quick";
@@ -23,11 +22,26 @@ const props = withDefaults(
 const emit = defineEmits<{
   quick: [kind: QuickKind];
   undo: [id: string];
-  start: [kind: TimerKind, side?: TimerSide];
+  edit: [id: string];
+  manualSleep: [asleep: string, awake: string];
+  start: [side: TimerSide];
   switch: [side: TimerSide];
   finish: [];
   cancel: [];
 }>();
+
+const manualSleepOpen = ref(false);
+const asleepTime = ref("");
+const awakeTime = ref("");
+
+function submitManualSleep() {
+  if (!asleepTime.value || !awakeTime.value || asleepTime.value === awakeTime.value)
+    return;
+  emit("manualSleep", asleepTime.value, awakeTime.value);
+  manualSleepOpen.value = false;
+  asleepTime.value = "";
+  awakeTime.value = "";
+}
 
 const now = ref(Date.now());
 let ticker: ReturnType<typeof setInterval> | undefined;
@@ -51,15 +65,11 @@ const elapsed = computed(() =>
 );
 const clock = computed(() => formatClock(elapsed.value));
 const sides = computed(() =>
-  props.timer?.kind === "feeding"
-    ? feedingSideMinutes(props.timer, new Date(now.value))
-    : null,
+  props.timer ? feedingSideMinutes(props.timer, new Date(now.value)) : null,
 );
 const runningLabel = computed(() => {
   const timer = props.timer;
   if (!timer) return "";
-  if (timer.kind === "sleep")
-    return `睡眠中 · ${formatTime(timer.startedAt)} 开始`;
   const side = timer.side === "right" ? "右" : "左";
   const parts = sides.value
     ? [
@@ -78,7 +88,13 @@ const otherSide = computed<TimerSide>(() =>
   <section class="quick-log" :class="{ 'night-mode': props.night }">
     <div class="quick-head">
       <h2>记一次</h2>
-      <span>默认记到现在</span>
+      <button
+        class="link-button"
+        type="button"
+        @click="manualSleepOpen = !manualSleepOpen"
+      >
+        {{ manualSleepOpen ? "收起补记" : "补记一觉" }}
+      </button>
     </div>
     <div class="quick-actions">
       <button
@@ -91,8 +107,43 @@ const otherSide = computed<TimerSide>(() =>
         {{ action.label }}
       </button>
     </div>
+    <form
+      v-if="manualSleepOpen"
+      class="manual-sleep-form"
+      @submit.prevent="submitManualSleep"
+    >
+      <div class="manual-sleep-fields">
+        <label class="field"
+          ><span>几点睡着</span
+          ><input v-model="asleepTime" type="time" required
+        /></label>
+        <label class="field"
+          ><span>几点醒来</span
+          ><input v-model="awakeTime" type="time" required
+        /></label>
+      </div>
+      <div class="manual-sleep-actions">
+        <button
+          class="button button-primary small"
+          type="submit"
+          :disabled="!asleepTime || !awakeTime || asleepTime === awakeTime"
+        >
+          保存这觉
+        </button>
+        <button
+          class="button button-ghost small"
+          type="button"
+          @click="manualSleepOpen = false"
+        >
+          取消
+        </button>
+      </div>
+    </form>
     <p v-if="recent" class="quick-undo" role="status">
       已记下 {{ recent.label }} · {{ formatTime(recent.at) }}
+      <button class="link-button" type="button" @click="emit('edit', recent.id)">
+        补充详情
+      </button>
       <button class="link-button" type="button" @click="emit('undo', recent.id)">
         撤销
       </button>
@@ -101,29 +152,22 @@ const otherSide = computed<TimerSide>(() =>
     <div class="timer-block">
       <div class="quick-head">
         <h2>计时</h2>
-        <span v-if="!timer">记不准时长时，用计时</span>
+        <span v-if="!timer">亲喂分侧计时，睡觉用「记一次 / 补记一觉」</span>
       </div>
       <div v-if="!timer" class="timer-starts">
         <button
           class="button button-secondary"
           type="button"
-          @click="emit('start', 'feeding', 'left')"
+          @click="emit('start', 'left')"
         >
           <Play :size="15" aria-hidden="true" />亲喂 · 左
         </button>
         <button
           class="button button-secondary"
           type="button"
-          @click="emit('start', 'feeding', 'right')"
+          @click="emit('start', 'right')"
         >
           <Play :size="15" aria-hidden="true" />亲喂 · 右
-        </button>
-        <button
-          class="button button-secondary"
-          type="button"
-          @click="emit('start', 'sleep')"
-        >
-          <Moon :size="15" aria-hidden="true" />开始睡觉
         </button>
       </div>
       <div v-else class="timer-running" role="status" aria-live="polite">
@@ -131,7 +175,6 @@ const otherSide = computed<TimerSide>(() =>
         <p class="timer-meta">{{ runningLabel }}</p>
         <div class="timer-actions">
           <button
-            v-if="timer.kind === 'feeding'"
             class="button button-secondary"
             type="button"
             @click="emit('switch', otherSide)"
@@ -206,10 +249,27 @@ const otherSide = computed<TimerSide>(() =>
 .quick-undo {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 0;
   color: var(--muted);
   font-size: var(--font-xs);
+}
+.manual-sleep-form {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--tint);
+}
+.manual-sleep-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.manual-sleep-actions {
+  display: flex;
+  gap: 8px;
 }
 .link-button {
   padding: 4px 2px;

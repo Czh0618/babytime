@@ -77,6 +77,33 @@ export function deriveSleepSegments(entries: GrowthEntry[]): SleepSegment[] {
   return segments;
 }
 
+/** 超过 24 小时还没点「醒来」，当作忘了点，不再往上续。 */
+const ONGOING_LIMIT_MS = 24 * 60 * 60_000;
+
+/**
+ * 正在睡的那条记录：不晚于现在的最近一条睡眠记录仍是「睡着」（没醒来、没时长）。
+ * 判断规则与 deriveSleepSegments 的「进行中」一致，供快记「醒来」续上同一条记录。
+ */
+export function ongoingSleep(
+  entries: GrowthEntry[],
+  now = new Date(),
+): GrowthEntry | undefined {
+  let latest: GrowthEntry | undefined;
+  for (const entry of entries) {
+    if (entry.care?.kind !== "sleep" || !entry.capturedAt) continue;
+    if (Date.parse(entry.capturedAt) > now.getTime()) continue;
+    // 同一时刻取后一条，与排序后逐条配对的结果一致。
+    if (!latest || entry.capturedAt >= latest.capturedAt) latest = entry;
+  }
+  const care = latest?.care;
+  if (!latest || !care) return undefined;
+  if (care.sleepState === "awake" || (care.durationMinutes ?? 0) > 0)
+    return undefined;
+  return now.getTime() - Date.parse(latest.capturedAt) <= ONGOING_LIMIT_MS
+    ? latest
+    : undefined;
+}
+
 /** 跨午夜的睡眠按自然日切分，进行中的段不参与统计。 */
 export function splitSegmentByDay(
   segment: SleepSegment,

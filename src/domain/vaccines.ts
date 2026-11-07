@@ -175,10 +175,11 @@ export function summarizeVaccines(tasks: VaccineTask[]): VaccineSummary {
 export function nextDose(
   records: VaccinationRecord[],
   code: string,
+  specialProgram = false,
 ): number | undefined {
   const spec = VACCINE_BY_CODE[code];
   if (!spec) return undefined;
-  for (const item of spec.doses)
+  for (const item of dosesFor(spec, specialProgram))
     if (!recordFor(records, code, item.dose)) return item.dose;
   return undefined;
 }

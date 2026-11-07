@@ -42,6 +42,41 @@ test("确认接种草稿时同时写进疫苗计划，并按下一剂关联", ()
   assert.equal(workspace.vaccinations!.length, 2);
 });
 
+test("多宝宝与乙肝特殊程序：语音录入疫苗只按当前宝宝的接种记录与特殊程序推算下一剂", () => {
+  const workspace = emptyWorkspace();
+  workspace.profiles = [
+    { id: "b1", name: "姐姐", birthDate: "2024-01-01" },
+    {
+      id: "b2",
+      name: "弟弟",
+      birthDate: "2026-01-01",
+      vaccinePlan: { specialProgram: true, choices: {} },
+    },
+  ];
+  workspace.activeProfileId = "b2";
+  workspace.vaccinations = [
+    // 姐姐已经打过 2 剂百白破，不应影响弟弟。
+    { id: "s1", babyId: "b1", code: "DTaP", dose: 1, date: "2024-03-01", createdAt: "x" },
+    { id: "s2", babyId: "b1", code: "DTaP", dose: 2, date: "2024-05-01", createdAt: "x" },
+    // 弟弟已打过 3 剂乙肝，因为开了特殊程序（4 剂），下一剂应为第 4 剂。
+    { id: "y1", babyId: "b2", code: "HepB", dose: 1, date: "2026-01-01", createdAt: "x" },
+    { id: "y2", babyId: "b2", code: "HepB", dose: 2, date: "2026-02-01", createdAt: "x" },
+    { id: "y3", babyId: "b2", code: "HepB", dose: 3, date: "2026-03-01", createdAt: "x" },
+  ];
+
+  const dtapBatch = parseVoiceTranscript("下午三点打了百白破疫苗", now);
+  addVoiceEntries(workspace, dtapBatch, "b2-dtap");
+  const addedDtap = workspace.vaccinations.find((item) => item.inputId?.startsWith("b2-dtap:"))!;
+  assert.equal(addedDtap.babyId, "b2");
+  assert.equal(addedDtap.dose, 1);
+
+  const hepbBatch = parseVoiceTranscript("上午十点打了乙肝疫苗", now);
+  addVoiceEntries(workspace, hepbBatch, "b2-hepb");
+  const addedHepb = workspace.vaccinations.find((item) => item.inputId?.startsWith("b2-hepb:"))!;
+  assert.equal(addedHepb.babyId, "b2");
+  assert.equal(addedHepb.dose, 4);
+});
+
 test("日历文件是标准 ics，包含整日事件与提前一天提醒", () => {
   const event = {
     code: "DTaP",

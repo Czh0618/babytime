@@ -14,6 +14,7 @@ import {
 import {
   deriveSleepSegments,
   formatMinutes,
+  ongoingSleep,
   sleepSummaryForDay,
 } from "../domain/sleep";
 import { nightSummary } from "../domain/stats";
@@ -40,6 +41,16 @@ const lastMedicine = computed(() =>
 );
 const sleep = computed(() =>
   sleepSummaryForDay(deriveSleepSegments(props.entries), localDate()),
+);
+const ongoing = computed(() =>
+  ongoingSleep(props.entries, new Date(now.value)),
+);
+const ongoingDuration = computed(() =>
+  ongoing.value
+    ? formatMinutes(
+        Math.max(1, (now.value - Date.parse(ongoing.value.capturedAt)) / 60_000),
+      )
+    : "",
 );
 const nightly = computed(() =>
   nightSummary(
@@ -144,6 +155,10 @@ const latest = computed(() => {
       距上次用药：{{ hoursSince(lastMedicine.capturedAt, new Date(now)) }} · 上次
       {{ formatTime(lastMedicine.capturedAt) }}
       {{ describeCare(lastMedicine.care!) }}
+    </p>
+    <p v-if="ongoing" class="milk-summary">
+      正在睡：{{ formatTime(ongoing.capturedAt) }} 入睡 · 已睡
+      {{ ongoingDuration }}
     </p>
     <p v-if="sleep.totalMinutes" class="milk-summary">
       今日睡眠：共 {{ formatMinutes(sleep.totalMinutes) }} · 最长一段

@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import type {
   BabyProfile,
   Candidate,
@@ -23,6 +23,7 @@ import {
 import {
   clearAllData,
   deleteMedia,
+  pruneOrphanMedia,
   readMedia,
   readWorkspace,
   removeMediaAndWorkspace,
@@ -31,6 +32,11 @@ import {
   writeWorkspaceAndMedia,
   type StoredMedia,
 } from "./storage";
+import {
+  peerChangeMessage,
+  shouldRefreshFromPeer,
+  WORKSPACE_CHANNEL,
+} from "./peer-refresh";
 import { inspectMedia, validateMediaFile, type PreparedMedia } from "./media";
 import { isWorkspace } from "../domain/workspace-schema";
 import { validateProfile } from "../domain/profile";
@@ -42,6 +48,7 @@ import type { VoiceDraft } from "../domain/care-types";
 import type { AICaption } from "../domain/ai";
 import { migrateSyncMeta, stampChanges } from "../domain/sync-meta";
 import { activeProfileOf, migrateProfiles } from "../domain/profiles";
+import { referencedMediaIds } from "../domain/media-refs";
 import { runSync, type SyncOutcome } from "../domain/sync";
 import {
   clearSyncConfig,
@@ -86,6 +93,65 @@ export function useWorkspace() {
   const importing = ref(false);
   const importProgress = ref("");
   let writes = Promise.resolve();
+  const peerId = createId();
+  let peerChannel: BroadcastChannel | undefined;
+  let peerRefresh = Promise.resolve();
+
+  /** 每次写入成功后通知同浏览器其它标签页；收到通知的一方只读内存，不再广播。 */
+  function notifyPeers() {
+    try {
+      peerChannel?.postMessage(peerChangeMessage(peerId));
+    } catch {
+      // 通道已关闭或隐私模式禁用，忽略：本机数据不受影响。
+    }
+  }
+
+  /** 回收失败不影响主流程，也不打断备份恢复与同步。 */
+  async function collectOrphanMedia(next: Workspace, extraIds: string[] = []) {
+    try {
+      await pruneOrphanMedia(referencedMediaIds(next, extraIds));
+    } catch {
+      // 清理只是节省本机空间，留到下次触发再试。
+    }
+  }
+
+  async function refreshFromPeer() {
+    await writes.catch(() => {});
+    try {
+      const saved = await readWorkspace();
+      if (!saved || !isWorkspace(saved)) return;
+      const next = migrateProfiles(saved, createId);
+      migrateSyncMeta(next, deviceId());
+      // 当前宝宝是本机偏好，不跟着其它标签页的切换跑。
+      if (next.profiles.some((item) => item.id === workspace.value.activeProfileId))
+        next.activeProfileId = workspace.value.activeProfileId;
+      await attachMedia(next);
+      const oldMedia = workspace.value.media;
+      workspace.value = next;
+      releaseUrls(oldMedia);
+      storageError.value = "";
+    } catch {
+      // 读失败时保留当前内存，等下一次写入广播再刷新。
+    }
+  }
+
+  function listenPeers() {
+    if (typeof BroadcastChannel === "undefined") return;
+    try {
+      peerChannel = new BroadcastChannel(WORKSPACE_CHANNEL);
+      peerChannel.onmessage = (event: MessageEvent) => {
+        if (!shouldRefreshFromPeer(event.data, peerId)) return;
+        peerRefresh = peerRefresh.then(refreshFromPeer, refreshFromPeer);
+      };
+    } catch {
+      peerChannel = undefined;
+    }
+  }
+  listenPeers();
+  onBeforeUnmount(() => {
+    peerChannel?.close();
+    peerChannel = undefined;
+  });
 
   const profiles = computed(() => workspace.value.profiles);
   const activeProfile = computed(() => activeProfileOf(workspace.value));
@@ -167,7 +233,7 @@ export function useWorkspace() {
     const action = writes
       .catch(() => {})
       .then(async () => {
-        // ponytail: 旧工作区独有的原片留在 IndexedDB 不清理，需要时再做孤儿原片回收。
+        // 旧工作区独有的原片在覆盖成功后回收；备份刚写入的原片不在白名单丢失。
         const oldMedia = workspace.value.media;
         let missing: number;
         try {
@@ -181,6 +247,11 @@ export function useWorkspace() {
         releaseUrls(oldMedia);
         storageError.value = "";
         resetSince();
+        notifyPeers();
+        await collectOrphanMedia(
+          next,
+          mediaFiles.map((item) => item.id),
+        );
         return missing;
       });
     // 队列只负责等待；恢复错误由返回的 action 交给界面处理。
@@ -199,6 +270,7 @@ export function useWorkspace() {
         stampChanges(workspace.value, next, deviceId());
         await writeWorkspaceAndMedia(next, mediaFiles);
         workspace.value = next;
+        notifyPeers();
         scheduleSync();
       });
     writes = action;
@@ -408,6 +480,7 @@ export function useWorkspace() {
         await removeMediaAndWorkspace(mediaId, next);
         workspace.value = next;
         releaseUrls(removed);
+        notifyPeers();
         scheduleSync();
       });
     writes = action;
@@ -542,6 +615,7 @@ export function useWorkspace() {
       next.candidates = next.candidates.filter(gone);
       next.vaccinations = (next.vaccinations ?? []).filter(gone);
     });
+    await collectOrphanMedia(workspace.value);
   }
 
   async function loadDemo() {
@@ -566,6 +640,7 @@ export function useWorkspace() {
     workspace.value = empty;
     releaseUrls(oldMedia);
     storageError.value = "";
+    notifyPeers();
     // 清空本机也清掉家庭密钥，否则下次同步会把服务器上的记录全部拉回来。
     clearSyncConfig();
   }
@@ -575,10 +650,14 @@ export function useWorkspace() {
     const action = writes
       .catch(() => {})
       .then(async () => {
+        const beforeMedia = workspace.value.media.length;
         const next: Workspace = JSON.parse(JSON.stringify(workspace.value));
         change(next);
         await writeWorkspace(next);
         workspace.value = next;
+        notifyPeers();
+        // 远端同步删掉了素材元信息时，把本机留着的原片一起回收。
+        if (next.media.length < beforeMedia) await collectOrphanMedia(next);
       });
     writes = action;
     return action;
