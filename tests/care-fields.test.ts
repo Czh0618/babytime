@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { describeCare, summarizeMilk } from "../src/domain/care-records.ts";
+import { validateEntry } from "../src/domain/records.ts";
 import { isWorkspace, parseBackupContent } from "../src/domain/workspace-schema.ts";
 import { localDate } from "../src/domain/date.ts";
 import type { CareObservation } from "../src/domain/care-types.ts";
@@ -151,4 +152,16 @@ test("非法枚举与非数值的新字段会被备份校验拒绝", () => {
     sourceText: "喂奶",
   });
   assert.throws(() => parseBackupContent(JSON.stringify(bad)));
+});
+
+test("编辑弹窗的喂养细分字段：分钟与奶量越界会被拦下", () => {
+  const base = {
+    title: "亲喂", note: "", capturedAt: "2026-11-07T10:00", tag: "喂奶", milestone: false,
+  };
+  const care = (extra: object) => ({ ...base, care: { kind: "feeding" as const, sourceText: "", ...extra } });
+  assert.equal(validateEntry(care({ feedingMethod: "breast", leftMinutes: 15, rightMinutes: 10, breastSide: "both" })), null);
+  assert.equal(validateEntry(care({ feedingMethod: "solid", food: "南瓜泥" })), null);
+  assert.match(validateEntry(care({ leftMinutes: 0 }))!, /大于 0/);
+  assert.match(validateEntry(care({ feedingMinutes: 601 }))!, /600 分钟/);
+  assert.match(validateEntry(care({ amountMl: 450 }))!, /400 ml/);
 });

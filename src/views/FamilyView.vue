@@ -446,8 +446,8 @@ function clearData() {
   margin: 18px 0;
 }
 .notice.error {
-  background: #f7e5df;
-  color: #8d3f31;
+  background: var(--danger-bg);
+  color: var(--danger-ink);
 }
 .surface {
   background: var(--surface);
@@ -638,7 +638,7 @@ function clearData() {
   border-bottom: 0;
 }
 .danger {
-  color: #a14d3b;
+  color: var(--danger);
 }
 .footnote {
   color: var(--muted);

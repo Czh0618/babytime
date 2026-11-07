@@ -5,7 +5,14 @@ import ModalDialog from "./ModalDialog.vue";
 import MediaTile from "./MediaTile.vue";
 import { localDateTime } from "../domain/date";
 import { validateEntry } from "../domain/records";
-import { CARE_LABELS, SITE_LABELS, careFromTag, type CareKind } from "../domain/care-types";
+import {
+  CARE_LABELS,
+  FEEDING_METHOD_LABELS,
+  SITE_LABELS,
+  careFromTag,
+  type CareKind,
+  type FeedingMethod,
+} from "../domain/care-types";
 import { VACCINES_2026 } from "../data/vaccines-2026";
 import { prepareMediaFile, type PreparedMedia } from "../lib/media";
 import {
@@ -171,6 +178,25 @@ function numberInput(event: Event) {
   const value = (event.target as HTMLInputElement).value;
   return value === "" ? undefined : Number(value);
 }
+/** 换喂养方式时清掉不属于新方式的字段，避免摘要里混进旧数值。 */
+function setFeedingMethod(value: string) {
+  if (!draft.care) return;
+  const { kind, sourceText, inputId, amountMl, feedingMinutes } = draft.care;
+  const method = (value || undefined) as FeedingMethod | undefined;
+  draft.care = { kind, sourceText, inputId, feedingMethod: method };
+  if (method !== "breast" && method !== "solid") draft.care.amountMl = amountMl;
+  if (method !== "solid" && method !== "pump") draft.care.feedingMinutes = feedingMinutes;
+}
+function setBreastMinutes(side: "left" | "right", event: Event) {
+  if (!draft.care) return;
+  draft.care[side === "left" ? "leftMinutes" : "rightMinutes"] = numberInput(event);
+  const { leftMinutes, rightMinutes } = draft.care;
+  draft.care.breastSide =
+    leftMinutes && rightMinutes ? "both" : leftMinutes ? "left" : rightMinutes ? "right" : undefined;
+}
+function textInput(event: Event) {
+  return (event.target as HTMLInputElement).value.trim() || undefined;
+}
 function pickVaccine(code: string) {
   if (!draft.care) return;
   const spec = VACCINES_2026.find((item) => item.code === code);
@@ -304,13 +330,92 @@ function startPlayback() {
           </select></label
         >
         <label v-if="draft.care.kind === 'feeding'" class="field"
-          ><span>奶量（毫升，可选）</span
+          ><span>喂养方式（可选）</span
+          ><select
+            :value="draft.care.feedingMethod ?? ''"
+            @change="setFeedingMethod(($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">未细分</option>
+            <option
+              v-for="(label, method) in FEEDING_METHOD_LABELS"
+              :key="method"
+              :value="method"
+            >
+              {{ label }}
+            </option>
+          </select></label
+        >
+        <template v-if="draft.care.kind === 'feeding' && draft.care.feedingMethod === 'breast'">
+          <label class="field"
+            ><span>左侧（分钟，可选）</span
+            ><input
+              :value="draft.care.leftMinutes ?? ''"
+              type="number"
+              min="1"
+              max="600"
+              inputmode="numeric"
+              @input="setBreastMinutes('left', $event)"
+          /></label>
+          <label class="field"
+            ><span>右侧（分钟，可选）</span
+            ><input
+              :value="draft.care.rightMinutes ?? ''"
+              type="number"
+              min="1"
+              max="600"
+              inputmode="numeric"
+              @input="setBreastMinutes('right', $event)"
+          /></label>
+        </template>
+        <template v-if="draft.care.kind === 'feeding' && draft.care.feedingMethod === 'solid'">
+          <label class="field"
+            ><span>吃了什么（可选）</span
+            ><input
+              :value="draft.care.food ?? ''"
+              maxlength="30"
+              placeholder="例如：南瓜泥"
+              @input="draft.care.food = textInput($event)"
+          /></label>
+          <label class="field"
+            ><span>不适或过敏（可选）</span
+            ><input
+              :value="draft.care.reaction ?? ''"
+              maxlength="60"
+              placeholder="只记看到的情况"
+              @input="draft.care.reaction = textInput($event)"
+          /></label>
+        </template>
+        <label
+          v-if="
+            draft.care.kind === 'feeding' &&
+            draft.care.feedingMethod !== 'breast' &&
+            draft.care.feedingMethod !== 'solid'
+          "
+          class="field"
+          ><span>{{ draft.care.feedingMethod === "pump" ? "吸出量" : "奶量" }}（毫升，可选）</span
           ><input
             :value="draft.care.amountMl ?? ''"
             type="number"
             min="0.1"
+            max="400"
             step="0.1"
             @input="draft.care.amountMl = numberInput($event)"
+        /></label>
+        <label
+          v-if="
+            draft.care.kind === 'feeding' &&
+            draft.care.feedingMethod !== 'solid' &&
+            draft.care.feedingMethod !== 'pump'
+          "
+          class="field"
+          ><span>喂奶时长（分钟，可选）</span
+          ><input
+            :value="draft.care.feedingMinutes ?? ''"
+            type="number"
+            min="1"
+            max="600"
+            inputmode="numeric"
+            @input="draft.care.feedingMinutes = numberInput($event)"
         /></label>
         <label v-if="draft.care.kind === 'sleep'" class="field"
           ><span>睡眠时长（分钟，可选）</span

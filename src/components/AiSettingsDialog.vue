@@ -258,8 +258,8 @@ function remove() {
   line-height: 1.6;
 }
 .ai-message.error {
-  background: #f7e5df;
-  color: #8d3f31;
+  background: var(--danger-bg);
+  color: var(--danger-ink);
 }
 .ai-actions {
   display: flex;

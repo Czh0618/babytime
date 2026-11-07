@@ -519,8 +519,8 @@ function createRecap() {
   margin: 18px 0;
 }
 .notice.error {
-  background: #f7e5df;
-  color: #8d3f31;
+  background: var(--danger-bg);
+  color: var(--danger-ink);
 }
 .surface {
   background: var(--surface);
@@ -720,7 +720,7 @@ function createRecap() {
   gap: 14px;
 }
 .danger {
-  color: #a14d3b;
+  color: var(--danger);
 }
 @media (max-width: 600px) {
   .page-heading-row,

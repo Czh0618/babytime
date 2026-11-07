@@ -47,6 +47,14 @@ export const FEEDING_METHODS: readonly FeedingMethod[] = [
 
 export const BREAST_SIDES: readonly BreastSide[] = ["left", "right", "both"];
 
+export const FEEDING_METHOD_LABELS: Record<FeedingMethod, string> = {
+  breast: "亲喂",
+  "bottle-formula": "配方奶",
+  "bottle-breastmilk": "瓶喂母乳",
+  solid: "辅食",
+  pump: "吸奶",
+};
+
 /** 照护记录里的可选细分字段；全部可选，旧数据没有这些字段也能正常加载。 */
 export interface CareFields {
   feedingMethod?: FeedingMethod;

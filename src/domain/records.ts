@@ -31,10 +31,14 @@ export function validateEntry(
       ].includes(draft.care.kind)
     )
       return "请选择有效的照护类型。";
-    for (const value of [draft.care.amountMl, draft.care.durationMinutes]) {
+    const { amountMl, durationMinutes, leftMinutes, rightMinutes, feedingMinutes } = draft.care;
+    for (const value of [amountMl, durationMinutes, leftMinutes, rightMinutes, feedingMinutes]) {
       if (value !== undefined && (!Number.isFinite(value) || value <= 0))
         return "奶量或时长需要填写大于 0 的数字，也可以留空。";
     }
+    if (amountMl !== undefined && amountMl > 400) return "奶量需要在 400 ml 以内，请核对。";
+    if ([leftMinutes, rightMinutes, feedingMinutes].some((value) => value !== undefined && value > 600))
+      return "喂奶时长需要在 600 分钟以内，请核对。";
     if (draft.care.kind === "temperature") {
       const value = draft.care.temperatureC;
       if (value === undefined || !Number.isFinite(value))

@@ -918,8 +918,8 @@ onBeforeUnmount(() => {
   margin-top: 12px;
   padding: 11px 13px;
   border-radius: 11px;
-  background: #f7e5df;
-  color: #8d3f31;
+  background: var(--danger-bg);
+  color: var(--danger-ink);
   font-size: 13px;
   line-height: 1.6;
 }

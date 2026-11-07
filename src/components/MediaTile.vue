@@ -117,8 +117,8 @@ watch(
   color: var(--sage-ink);
 }
 .theme-rose {
-  background: #f0e3de;
-  color: #9b7668;
+  background: var(--rose);
+  color: var(--rose-ink);
 }
 .media-placeholder {
   display: grid;

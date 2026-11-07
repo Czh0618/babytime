@@ -101,6 +101,7 @@ const LIGHT: Array<[string, string, string]> = [
   ["提示文字", "#456249", "#e9eee6"],
   ["主按钮文字", "#fffdf9", "#73543c"],
   ["危险文字", "#a14d3b", "#faf7f2"],
+  ["错误提示块", "#8d3f31", "#f7e5df"],
 ];
 const DARK: Array<[string, string, string]> = [
   ["正文", "#f2ece3", "#1c1916"],
@@ -109,6 +110,8 @@ const DARK: Array<[string, string, string]> = [
   ["提示文字", "#bcd7c0", "#27352a"],
   ["主按钮文字", "#241d16", "#d8b38c"],
   ["危险文字", "#e08b78", "#1c1916"],
+  ["错误提示块", "#f0b3a5", "#3a2420"],
+  ["玫瑰色素材", "#d9b3a8", "#382a27"],
 ];
 
 test("浅色与深色主题下主要文字对比度都 ≥ 4.5:1", () => {

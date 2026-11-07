@@ -38,7 +38,7 @@ defineEmits<{ start: [] }>();
   padding: 24px;
   border-radius: 22px;
   background: var(--tint);
-  border: 1px solid #e5dacc;
+  border: 1px solid var(--line);
 }
 .voice-entry-copy {
   min-width: 0;
