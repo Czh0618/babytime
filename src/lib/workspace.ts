@@ -41,6 +41,17 @@ import { addVoiceEntries } from "../domain/care-records";
 import type { VoiceDraft } from "../domain/care-types";
 import type { AICaption } from "../domain/ai";
 import { migrateSyncMeta, stampChanges } from "../domain/sync-meta";
+import { runSync, type SyncOutcome } from "../domain/sync";
+import {
+  clearSyncConfig,
+  createTransport,
+  readSince,
+  readSyncConfig,
+  resetSince,
+  syncUnavailableReason,
+  syncState,
+  writeSince,
+} from "./sync-service";
 
 let cachedDeviceId: string | undefined;
 /** 本机设备标识，存 localStorage；隐私模式写不进时本次会话内保持不变。 */
@@ -156,6 +167,7 @@ export function useWorkspace() {
         workspace.value = next;
         releaseUrls(oldMedia);
         storageError.value = "";
+        resetSince();
         return missing;
       });
     // 队列只负责等待；恢复错误由返回的 action 交给界面处理。
@@ -173,6 +185,7 @@ export function useWorkspace() {
         stampChanges(workspace.value, next, deviceId());
         await writeWorkspaceAndMedia(next, mediaFiles);
         workspace.value = next;
+        scheduleSync();
       });
     writes = action;
     return action;
@@ -381,6 +394,7 @@ export function useWorkspace() {
         await removeMediaAndWorkspace(mediaId, next);
         workspace.value = next;
         releaseUrls(removed);
+        scheduleSync();
       });
     writes = action;
     return action;
@@ -480,6 +494,65 @@ export function useWorkspace() {
     workspace.value = empty;
     releaseUrls(oldMedia);
     storageError.value = "";
+    // 清空本机也清掉家庭密钥，否则下次同步会把服务器上的记录全部拉回来。
+    clearSyncConfig();
+  }
+
+  /** 把同步结果写回本机：走同一个写入队列，但不盖章，否则合并会被当成新修改推回去。 */
+  function mergeRemote(change: (next: Workspace) => void) {
+    const action = writes
+      .catch(() => {})
+      .then(async () => {
+        const next: Workspace = JSON.parse(JSON.stringify(workspace.value));
+        change(next);
+        await writeWorkspace(next);
+        workspace.value = next;
+      });
+    writes = action;
+    return action;
+  }
+
+  let syncing: Promise<SyncOutcome | null> | null = null;
+  let syncTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** 一轮同步。未开启、非 https、离线或本机存储出错时直接返回 null；失败只记在 syncState，不影响本机使用。 */
+  function syncNow(): Promise<SyncOutcome | null> {
+    clearTimeout(syncTimer);
+    const config = readSyncConfig();
+    if (!config?.enabled || syncUnavailableReason() || storageError.value || loading.value)
+      return Promise.resolve(null);
+    if (typeof navigator !== "undefined" && navigator.onLine === false)
+      return Promise.resolve(null);
+    syncing ??= (async () => {
+      syncState.value.running = true;
+      try {
+        const outcome = await runSync({
+          since: readSince(),
+          deviceId: deviceId(),
+          transport: createTransport(config.key),
+          read: () => workspace.value,
+          merge: mergeRemote,
+        });
+        writeSince(outcome.now);
+        syncState.value.lastAt = new Date().toISOString();
+        syncState.value.error = "";
+        return outcome;
+      } catch (error) {
+        syncState.value.error = error instanceof Error ? error.message : "同步失败，稍后会自动重试。";
+        throw error;
+      } finally {
+        syncState.value.running = false;
+        syncing = null;
+      }
+    })();
+    return syncing;
+  }
+
+  /** 本机写入后稍等片刻再推送，连续操作合并成一轮。 */
+  function scheduleSync(delay = 3000) {
+    if (!readSyncConfig()?.enabled) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => void syncNow().catch(() => {}), delay);
   }
 
   return {
@@ -511,5 +584,6 @@ export function useWorkspace() {
     deleteRecap,
     reset,
     restore,
+    syncNow,
   };
 }

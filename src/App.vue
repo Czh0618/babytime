@@ -24,6 +24,8 @@ import ModalDialog from "./components/ModalDialog.vue";
 import VoiceEntryDialog from "./components/VoiceEntryDialog.vue";
 import VoiceEntryCard from "./components/VoiceEntryCard.vue";
 import AiSettingsDialog from "./components/AiSettingsDialog.vue";
+import SyncSettingsDialog from "./components/SyncSettingsDialog.vue";
+import { refreshSyncState } from "./lib/sync-service";
 import BackupReminder from "./components/BackupReminder.vue";
 import QuickLogCard from "./components/QuickLogCard.vue";
 import FirstRunGuide from "./components/FirstRunGuide.vue";
@@ -107,6 +109,7 @@ type Overlay =
   | { kind: "detail"; id: string }
   | { kind: "recap"; id: string }
   | { kind: "aiSettings" }
+  | { kind: "syncSettings" }
   | {
       kind: "confirm";
       title: string;
@@ -355,6 +358,24 @@ function mediaFor(id?: string): MediaAsset | undefined {
   return workspace.value.media.find((media) => media.id === id);
 }
 
+/** 手动或开启后同步一轮；结果用一句话告诉家长，失败不影响本机记录。 */
+async function syncNow(manual = false) {
+  try {
+    const outcome = await model.syncNow();
+    if (!outcome || !manual && !outcome.kept && !outcome.removed) return;
+    const parts = [`拉取 ${outcome.pulled} 项`, `推送 ${outcome.pushed} 项`];
+    if (outcome.kept) parts.push(`${outcome.kept} 条两边都改过，保留了这台设备的版本`);
+    if (outcome.removed) parts.push(`${outcome.removed} 条已在另一台设备删除`);
+    say(`同步完成：${parts.join("，")}。`);
+  } catch (error) {
+    if (manual) say(error instanceof Error ? error.message : "同步失败。", true);
+  }
+}
+function syncWhenVisible() {
+  if (document.visibilityState === "visible") void syncNow();
+}
+const syncOnline = () => void syncNow();
+
 function openAiSettings() {
   formError.value = "";
   overlay.value = { kind: "aiSettings" };
@@ -461,7 +482,7 @@ function askClear() {
     kind: "confirm",
     title: "清空本机的全部时光？",
     description:
-      "这会删除当前浏览器里的宝宝资料、原片、成长记录和回顾，无法撤销。建议先在上方导出备份 JSON。",
+      "这会删除当前浏览器里的宝宝资料、原片、成长记录和回顾，无法撤销。建议先在上方导出备份 JSON。开启了多设备同步时，本机的家庭密钥也会一并清除，服务器和家人设备上的记录不受影响。",
     action: async () => {
       await model.reset();
       navigate("time");
@@ -479,6 +500,7 @@ function askRestore(file: File) {
     success: "",
     action: async () => {
       const missing = await model.restore(file);
+      void syncNow();
       say(
         missing
           ? `已恢复记录，有 ${missing} 个素材缺少原片。可在记录的“编辑记录”中补回照片或视频。`
@@ -603,15 +625,20 @@ async function confirmAction() {
 onMounted(() => {
   window.addEventListener("hashchange", onHashChange);
   refreshAIStatus();
+  refreshSyncState();
   initializePersistenceStatus();
   refreshBackupState();
   document.addEventListener("visibilitychange", refreshNight);
+  document.addEventListener("visibilitychange", syncWhenVisible);
+  window.addEventListener("online", syncOnline);
   nightTimer = setInterval(refreshNight, 60_000);
-  void model.load();
+  void model.load().then(() => syncNow());
 });
 onBeforeUnmount(() => {
   window.removeEventListener("hashchange", onHashChange);
   document.removeEventListener("visibilitychange", refreshNight);
+  document.removeEventListener("visibilitychange", syncWhenVisible);
+  window.removeEventListener("online", syncOnline);
   clearInterval(nightTimer);
   clearTimeout(toastTimer);
   clearTimeout(quickTimer);
@@ -832,6 +859,8 @@ onBeforeUnmount(() => {
           @restore-data="askRestore"
           @export-data="downloadBackup"
           @open-ai-settings="openAiSettings"
+          @open-sync-settings="overlay = { kind: 'syncSettings' }"
+          @sync-now="syncNow(true)"
         />
       </template>
     </main>
@@ -863,6 +892,11 @@ onBeforeUnmount(() => {
       v-if="overlay?.kind === 'aiSettings'"
       @close="overlay = null"
       @saved="say('AI 服务已保存在本机，可以开始使用了。')"
+    />
+    <SyncSettingsDialog
+      v-if="overlay?.kind === 'syncSettings'"
+      @close="overlay = null"
+      @saved="syncNow(true)"
     />
     <EntryEditor
       v-if="overlay?.kind === 'editor'"

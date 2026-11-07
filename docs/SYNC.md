@@ -1,6 +1,6 @@
 # 多人同步设计（P4.1）
 
-> 状态：**已确认（2026-11-07）**。P4.2 已实现；P4.3（服务端与客户端同步）暂缓，等你再开口。确认结果见第 13 节。
+> 状态：**已确认并实现（2026-11-07）**。P4.2、P4.3、P4.4 均已完成；服务端与客户端在本机双来源（`127.0.0.1` / `localhost`）实测通过。确认结果见第 13 节，落地差异见第 14 节。
 > 目标读者：项目所有者。读完后需要决定的点集中在最后一节「需要你确认」。
 
 ## 1. 目标与边界
@@ -88,8 +88,8 @@ interface SyncMeta {
 |---|---|---|
 | `GET` | `/sync/health` | 返回 `{ ok: true, version }`，部署后自检用 |
 | `POST` | `/sync/pull` | 入参 `{ since?: string }`，返回 `{ now, entries, vaccinations, recaps, media, baby?, vaccinePlan?, milestones }`，只含 `serverUpdatedAt > since` 的条目（含墓碑） |
-| `POST` | `/sync/push` | 入参 `{ deviceId, changes: {...}, baseSince?: string }`，返回 `{ now, applied, conflicts[] }` |
-| `POST` | `/sync/reset` | 家庭密钥 + 二次确认口令，清空服务端数据（回滚用） |
+| `POST` | `/sync/push` | 入参 `{ deviceId, records[], singletons{}, milestones{} }`，返回 `{ now, applied, rejected[] }`（落地格式见第 14 节） |
+| `POST` | `/sync/reset` | 家庭密钥 + 确认口令 `{"confirm":"清空同步数据"}`，清空服务端数据（回滚用） |
 
 约定：
 
@@ -218,3 +218,13 @@ create table milestones (
 4. 后写者胜、整条覆盖：接受。
 5. 只同步元信息，缺原片时提示「原片在另一台设备」：接受。
 6. 地址：挂在现有 IP 证书的 `https://<服务器IP>/sync/` 下。
+
+## 14. 落地实现与设计稿的差异（P4.3）
+
+- **推送格式**：没有 `changes` 包一层，直接是 `{ deviceId, records[], singletons{}, milestones{} }`；服务端不返回 `conflicts[]`，而是返回 `rejected[]`（本机要推的新版本撞上已删除的墓碑，客户端据此删掉本地副本），冲突提示由客户端在合并时按 `kept` / `removed` 计数生成。
+- **拉取跳过本设备**：`pull` 带上 `deviceId`，增量拉取时不返回自己写过的行，避免刚推上去的内容又被拉回来盖章。
+- **待推清单**：`workspace.syncDirty` 记本机改过、还没推送的键；推送成功后只清除没再改过的键（按内容指纹对比），墓碑同时清理。不开同步时清单与墓碑只增不减，体积与记录数同量级。
+- **墓碑 TTL**：服务端在每次 `pull` 时删除 90 天前的墓碑（`TOMBSTONE_TTL_MS`），不再单独跑清理任务。
+- **密钥存放**：服务器上在 `/etc/babytime-sync.env`（仅 root 可读），首次安装时打印一次到终端；客户端只存 localStorage `babytime.sync`，不进 workspace 与备份 JSON。
+- **清空本机数据**会同时清除本机的家庭密钥（否则下次同步会把服务器上的记录全部拉回来）；服务器与家人设备不受影响。
+- **本机开发**：`vite.config.ts` 把 `/sync/` 代理到 `127.0.0.1:8787`，`BABYTIME_SYNC_ALLOW_HTTP=1 node server/sync.ts` 起服务端；`syncUnavailableReason()` 用 `isSecureContext` 判断，`127.0.0.1` / `localhost` 放行，部署后的 http 地址仍被拦下。

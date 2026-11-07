@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from "vue";
 import {
+  CloudUpload,
   Download,
   HardDrive,
   LockKeyhole,
@@ -18,6 +19,7 @@ import {
 import { dayAge, localDate } from "../domain/date";
 import { validateProfile } from "../domain/profile";
 import { aiStatus } from "../lib/ai-service";
+import { syncState } from "../lib/sync-service";
 import { describePersistence, persistenceStatus } from "../lib/persistence";
 import { isIOS, isStandalone, migrationCopy } from "../domain/pwa";
 import type { ThemePreference } from "../domain/night";
@@ -41,6 +43,8 @@ const emit = defineEmits<{
   restoreData: [file: File];
   clearData: [];
   openAiSettings: [];
+  openSyncSettings: [];
+  syncNow: [];
 }>();
 
 const draft = reactive<BabyProfile & { sex?: "male" | "female" | ""; dueDate?: string }>(
@@ -89,6 +93,21 @@ const aiDescription = computed(() => {
   if (!status.enabled)
     return `已配置 ${status.model}，当前已暂停。语音整理会继续使用本机规则。`;
   return `已连接 ${status.model}。AI 只接收你写下的文字与素材元信息，原片仍只保存在本机；生成内容一律是待确认草稿。`;
+});
+
+const syncLabel = computed(() =>
+  !syncState.value.configured ? "未开启" : syncState.value.enabled ? "已开启" : "已暂停",
+);
+const syncDescription = computed(() => {
+  const state = syncState.value;
+  if (!state.configured)
+    return "默认只存在这台设备。开启后，成长记录等结构化内容会存到你自己的服务器，家人的设备可以一起看、一起记；照片视频原片不上传。";
+  if (state.running) return "正在同步…";
+  if (state.error) return state.error;
+  if (!state.enabled) return "已暂停，本机记录照常保存，服务器上的数据保留。";
+  return state.lastAt
+    ? `上次同步：${new Date(state.lastAt).toLocaleString()}。结构化记录存在你自己的服务器上，原片只留在拍摄的设备。`
+    : "已开启。结构化记录存在你自己的服务器上，原片只留在拍摄的设备。";
 });
 
 function changeTheme(event: Event) {
@@ -285,6 +304,33 @@ function clearData() {
             </button>
           </div>
         </div>
+        <div class="setting-row ai-setting-row">
+          <CloudUpload :size="20" aria-hidden="true" />
+          <div>
+            <strong>多设备同步</strong>
+            <p class="muted">{{ syncDescription }}</p>
+          </div>
+          <div class="ai-setting-actions">
+            <span class="pill">{{ syncLabel }}</span>
+            <button
+              v-if="syncState.enabled"
+              class="button button-secondary"
+              type="button"
+              :disabled="busy || syncState.running"
+              @click="emit('syncNow')"
+            >
+              <RefreshCw :size="15" />立即同步
+            </button>
+            <button
+              class="button button-secondary"
+              type="button"
+              :disabled="busy"
+              @click="emit('openSyncSettings')"
+            >
+              <Settings2 :size="15" />设置
+            </button>
+          </div>
+        </div>
         <div class="setting-row">
           <Moon :size="20" aria-hidden="true" />
           <div>
@@ -308,7 +354,13 @@ function clearData() {
           <LockKeyhole :size="20" aria-hidden="true" />
           <div>
             <strong>谁能看到记录</strong>
-            <p class="muted">目前没有家庭云同步、邀请或公开分享功能。</p>
+            <p class="muted">
+              {{
+                syncState.enabled
+                  ? "这台设备和填了同一家庭密钥的设备，以及能登录你服务器的人。结构化记录会存到你自己的服务器，照片视频原片不上传；没有邀请或公开分享功能。"
+                  : "只有这台设备。开启多设备同步后，结构化记录会存到你自己的服务器；照片视频原片始终不上传。没有邀请或公开分享功能。"
+              }}
+            </p>
           </div>
         </div>
       </div>

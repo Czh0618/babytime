@@ -144,6 +144,64 @@ if [[ "$MODE" == "ip-https" ]]; then
 "
 fi
 
+SYNC_UNIT=/etc/systemd/system/babytime-sync.service
+SYNC_ENV=/etc/babytime-sync.env
+SYNC_KEY_CREATED=0
+
+# Family sync (docs/SYNC.md): only installed when deploy.sh uploads server/sync.ts
+# (DEPLOY_SYNC=1). Once installed, later deploys keep the /sync/ proxy.
+install_sync() {
+  [[ "$MODE" != "ip" ]] || die "Sync needs HTTPS; deploy with ip-https or domain mode."
+  command -v node >/dev/null 2>&1 || die "Sync needs Node.js 22.18+ on the server (node:sqlite and .ts support); install it first."
+  printf '%s\n%s\n' 22.18.0 "$(node -p process.versions.node)" | sort -V -C ||
+    die "Sync needs Node.js 22.18+; the server has $(node -v)."
+  id babytime-sync >/dev/null 2>&1 ||
+    useradd --system --home-dir /var/lib/babytime --shell /usr/sbin/nologin babytime-sync
+  install -d -m 0750 -o babytime-sync -g babytime-sync /var/lib/babytime
+  install -d -m 0755 /opt/babytime-sync
+  install -m 0644 "$STAGE/sync.ts" /opt/babytime-sync/sync.ts
+  if [[ ! -s "$SYNC_ENV" ]]; then
+    (umask 077 && printf 'BABYTIME_SYNC_KEY=%s\n' "$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')" > "$SYNC_ENV")
+    SYNC_KEY_CREATED=1
+  fi
+  cat > "$SYNC_UNIT" <<UNIT
+[Unit]
+Description=BabyTime family sync
+After=network.target
+
+[Service]
+User=babytime-sync
+EnvironmentFile=$SYNC_ENV
+Environment=BABYTIME_SYNC_DB=/var/lib/babytime/sync.db
+ExecStart=$(command -v node) /opt/babytime-sync/sync.ts
+Restart=always
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/babytime
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable babytime-sync >/dev/null
+  systemctl restart babytime-sync
+}
+
+if [[ -f "$STAGE/sync.ts" ]]; then
+  install_sync
+fi
+SYNC_LOCATION=""
+if [[ -f "$SYNC_UNIT" ]]; then
+  SYNC_LOCATION="
+    location /sync/ {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Proto https;
+        client_max_body_size 1m;
+    }
+"
+fi
+
 write_http_config() {
   local server_name="$1"
   local http_port="$2"
@@ -195,7 +253,7 @@ server {
     ssl_certificate $CERT_DIR/fullchain.pem;
     ssl_certificate_key $CERT_DIR/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
-
+${SYNC_LOCATION}
     location = /index.html {
         add_header Cache-Control "no-cache";
     }
@@ -316,4 +374,14 @@ if [[ "$MODE" == "ip" ]]; then
   fi
 else
   printf 'Open: https://%s/\n' "$SERVER_NAME"
+fi
+if [[ "$SYNC_KEY_CREATED" -eq 1 ]]; then
+  # Printed once to the terminal only; it stays readable by root in $SYNC_ENV.
+  printf '\nFamily sync key (save it in a password manager, enter it on each device):\n  %s\n' \
+    "$(sed -n 's/^BABYTIME_SYNC_KEY=//p' "$SYNC_ENV")"
+fi
+if [[ -f "$SYNC_UNIT" ]]; then
+  curl -fsS -H 'X-Forwarded-Proto: https' http://127.0.0.1:8787/sync/health >/dev/null 2>&1 &&
+    printf 'Sync service: healthy\n' ||
+    printf 'Warning: sync service health check failed; see journalctl -u babytime-sync.\n' >&2
 fi

@@ -139,6 +139,8 @@ export interface Workspace {
   vaccinePlanUpdatedAt?: string;
   /** 同步用：已删除条目的墓碑。 */
   tombstones?: Tombstone[];
+  /** 同步用：本机改过、还没推送的键（`entry:<id>`、`milestone:<key>`、`baby` 等）。 */
+  syncDirty?: string[];
 }
 
 export interface FamilyStats {

@@ -205,6 +205,9 @@ function validBackupWorkspace(workspace: Workspace): boolean {
     optionalString(workspace.babyUpdatedAt) &&
     optionalString(workspace.vaccinePlanUpdatedAt) &&
     validTombstones(workspace.tombstones) &&
+    (workspace.syncDirty === undefined ||
+      (Array.isArray(workspace.syncDirty) &&
+        workspace.syncDirty.every((key) => typeof key === "string"))) &&
     (workspace.milestones === undefined ||
       (typeof workspace.milestones === "object" &&
         !Array.isArray(workspace.milestones) &&

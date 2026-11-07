@@ -11,9 +11,10 @@ interface SyncItem {
   createdAt?: string;
 }
 
-const LIST_KINDS: ListKind[] = ["entry", "vaccination", "recap", "media"];
+export const LIST_KINDS: ListKind[] = ["entry", "vaccination", "recap", "media"];
+export type { ListKind, SyncItem };
 
-function lists(workspace: Workspace): Record<ListKind, SyncItem[]> {
+export function lists(workspace: Workspace): Record<ListKind, SyncItem[]> {
   return {
     entry: workspace.entries,
     vaccination: workspace.vaccinations ?? [],
@@ -51,9 +52,9 @@ const sameJson = (a: unknown, b: unknown) =>
 
 /**
  * 对比一次写入前后的工作区：新增或内容变化的条目盖上 updatedAt / deviceId，
- * 消失的条目写墓碑，重新出现的条目撤销墓碑。示例数据只在本机，删除不写墓碑。
- * ponytail: 墓碑只增不减，P4.3 推送成功后再按 90 天清理。
- * ponytail: 里程碑只记取消勾选的墓碑，没有逐键修改时间，P4.3 按推送快照判断新增。
+ * 消失的条目写墓碑，重新出现的条目撤销墓碑。示例数据只在本机，不盖章、不写墓碑。
+ * 所有变化的键同时记进 `syncDirty`（待推送清单），同步推送成功后由 domain/sync.ts 清除，
+ * 墓碑也随之清理；不开同步时清单与墓碑只增不减，体积与记录数同量级。
  */
 export function stampChanges(
   prev: Workspace,
@@ -64,29 +65,45 @@ export function stampChanges(
   const before = lists(prev);
   const after = lists(next);
   const tombstones: Tombstone[] = [...(next.tombstones ?? [])];
+  const dirty = new Set(next.syncDirty ?? []);
   const live = new Set<string>();
   for (const kind of LIST_KINDS) {
     const old = new Map(before[kind].map((item) => [item.id, item]));
     for (const item of after[kind]) {
       live.add(`${kind}:${item.id}`);
       const was = old.get(item.id);
-      if (was && sameJson(was, item)) continue;
+      if (item.demo || (was && sameJson(was, item))) continue;
       item.updatedAt = now;
       item.deviceId = deviceId;
+      dirty.add(`${kind}:${item.id}`);
     }
     for (const item of before[kind])
-      if (!live.has(`${kind}:${item.id}`) && !item.demo)
+      if (!live.has(`${kind}:${item.id}`) && !item.demo) {
         tombstones.push({ kind, id: item.id, deletedAt: now, deviceId });
+        dirty.add(`${kind}:${item.id}`);
+      }
   }
   const milestones = next.milestones ?? {};
-  for (const key of Object.keys(milestones)) live.add(`milestone:${key}`);
-  for (const key of Object.keys(prev.milestones ?? {}))
-    if (!(key in milestones))
+  const oldMilestones = prev.milestones ?? {};
+  for (const [key, date] of Object.entries(milestones)) {
+    live.add(`milestone:${key}`);
+    if (oldMilestones[key] !== date) dirty.add(`milestone:${key}`);
+  }
+  for (const key of Object.keys(oldMilestones))
+    if (!(key in milestones)) {
       tombstones.push({ kind: "milestone", id: key, deletedAt: now, deviceId });
+      dirty.add(`milestone:${key}`);
+    }
   next.tombstones = tombstones.filter(
     (item) => !live.has(`${item.kind}:${item.id}`),
   );
-  if (!sameJson(prev.baby, next.baby)) next.babyUpdatedAt = now;
-  if (!sameJson(prev.vaccinePlan, next.vaccinePlan))
+  if (!sameJson(prev.baby, next.baby)) {
+    next.babyUpdatedAt = now;
+    dirty.add("baby");
+  }
+  if (!sameJson(prev.vaccinePlan, next.vaccinePlan)) {
     next.vaccinePlanUpdatedAt = now;
+    dirty.add("vaccinePlan");
+  }
+  if (dirty.size) next.syncDirty = [...dirty];
 }

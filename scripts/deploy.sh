@@ -15,6 +15,9 @@ Configure the SSH target and deployment settings in .deploy.env first.
 ip-https serves https://<public IP>/ with a six-day Let's Encrypt IP
 certificate that renews automatically; it needs inbound TCP 80 and 443 and a
 valid certificate email, but no domain.
+Set DEPLOY_SYNC=1 in .deploy.env to also install the family sync service
+(HTTPS modes only, needs Node.js 22.18+ on the server); the family key is
+printed once on first install.
 Domain mode requires completed ICP filing for mainland hosting, DNS pointing to
 the ECS instance, inbound TCP ports 80 and 443, and a valid certificate email.
 USAGE
@@ -108,6 +111,10 @@ trap cleanup_local EXIT
 mkdir -p "$LOCAL_PACKAGE/dist"
 cp -a "$REPO_ROOT/dist/." "$LOCAL_PACKAGE/dist/"
 cp "$REPO_ROOT/scripts/deploy-remote.sh" "$LOCAL_PACKAGE/deploy-remote.sh"
+if [[ "${DEPLOY_SYNC:-0}" == "1" ]]; then
+  [[ "$DEPLOY_MODE" != "ip" ]] || die "DEPLOY_SYNC=1 needs ip-https or domain mode; the family key must not travel over HTTP."
+  cp "$REPO_ROOT/server/sync.ts" "$LOCAL_PACKAGE/sync.ts"
+fi
 
 printf 'Preparing upload to %s...\n' "$SSH_TARGET"
 REMOTE_STAGE="$(ssh "$SSH_TARGET" 'mktemp -d /tmp/babytime-deploy.XXXXXX')"
