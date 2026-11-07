@@ -1,8 +1,11 @@
 import { localDateTime } from "./date.ts";
 import {
   CARE_LABELS,
+  TEMPERATURE_MAX,
+  TEMPERATURE_MIN,
   type CareFields,
   type CareKind,
+  type TemperatureSite,
   type VoiceDraft,
 } from "./care-types.ts";
 import type { EntryDraft } from "../types.ts";
@@ -157,6 +160,19 @@ function isNegative(text: string, keyword: RegExp): boolean {
 }
 
 function kindFor(text: string): CareKind {
+  // 体温与用药优先判断：「发烧 38 度 5，喂了美林」要拆成两条，不能被喂奶规则吃掉。
+  if (
+    /(?:发烧|发热|体温|测了?温度|℃)|[0-9零〇一二两三四五六七八九十]{2}\s*(?:[.．][0-9]|[度℃])/.test(
+      text,
+    )
+  )
+    return "temperature";
+  if (
+    /(?:美林|泰诺林|布洛芬|对乙酰氨基酚|氨酚黄那敏|蒙脱石|益生菌|头孢|阿莫西林|退烧药|感冒药|止咳药|吃了?药|喂了?药|服了?药)/.test(
+      text,
+    )
+  )
+    return "medicine";
   if (
     /(?:喂|喝)(?:了|过|下)?[^，。；;]{0,12}(?:奶|奶粉|母乳)|奶量|奶瓶|配方奶|辅食|吸奶|挤奶|亲喂|米糊|果泥/.test(
       text,
@@ -221,6 +237,70 @@ function parseFeedingFields(clause: string): CareFields {
   return fields;
 }
 
+/** 体温：支持「38度5」「38.5」「三十八度五」这几种说法。 */
+function parseTemperature(clause: string): number | undefined {
+  const decimal = clause.match(/([0-9]{2})\s*[.．]\s*([0-9])/);
+  if (decimal) return Number(`${decimal[1]}.${decimal[2]}`);
+  const half = clause.match(/([0-9]{2})\s*(?:度|℃)\s*半/);
+  if (half) return Number(half[1]) + 0.5;
+  const digit = clause.match(/([0-9]{2})\s*(?:度|℃)\s*([0-9])/);
+  if (digit) return Number(digit[1]) + Number(digit[2]) / 10;
+  const whole = clause.match(/([0-9]{2})\s*(?:度|℃)/);
+  if (whole) return Number(whole[1]);
+  const chinese = clause.match(
+    /([零〇一二两三四五六七八九十]+)\s*度\s*([一二三四五六七八九])?/,
+  );
+  if (chinese) {
+    const base = chineseNumber(chinese[1]!);
+    if (base === undefined) return undefined;
+    if (chinese[2]) {
+      const digits: Record<string, number> = {
+        一: 1,
+        二: 2,
+        三: 3,
+        四: 4,
+        五: 5,
+        六: 6,
+        七: 7,
+        八: 8,
+        九: 9,
+      };
+      return base + digits[chinese[2]]! / 10;
+    }
+    return base;
+  }
+  return undefined;
+}
+
+function parseSite(clause: string): TemperatureSite | undefined {
+  if (/耳温|耳朵|耳道/.test(clause)) return "ear";
+  if (/额温|额头/.test(clause)) return "forehead";
+  if (/腋下|腋温|腋窝/.test(clause)) return "armpit";
+  if (/肛温|肛门|直肠/.test(clause)) return "rectal";
+  return undefined;
+}
+
+const KNOWN_MEDICINE =
+  /美林|泰诺林|布洛芬|对乙酰氨基酚|氨酚黄那敏|蒙脱石|益生菌|头孢|阿莫西林|退烧药|感冒药|止咳药/;
+
+/** 药名与剂量都保留家长说过的原文，不做换算、不推荐剂量。 */
+function parseMedicine(clause: string): { medicineName?: string; dose?: string } {
+  const known = clause.match(KNOWN_MEDICINE)?.[0];
+  const generic = clause.match(
+    /(?:喂|吃|服)(?:了|过|下)?\s*([\u4e00-\u9fa5]{2,8}?)(?=药|[0-9]|毫升|ml|毫克|mg|片|袋|滴|，|。|$)/,
+  )?.[1];
+  // 正则的可选前缀可能没吃掉「了」，「吃了药」会截到「了药」，这里清一遍。
+  const cleaned = generic
+    ?.replace(/^[了过下]/, "")
+    .replace(/药$/, "")
+    .trim();
+  const name = known ?? (cleaned ? cleaned : undefined);
+  const dose = clause
+    .match(/([0-9]+(?:\.[0-9]+)?)\s*(?:毫升|ml|ML|毫克|mg|克|片|袋|滴)/)?.[0]
+    ?.replace(/\s+/g, "");
+  return { medicineName: name, dose };
+}
+
 function isPlanned(text: string): boolean {
   return /(?:准备|打算|晚点|稍后|待会儿?|一会儿|明天|后天|等会儿?|计划)/.test(
     text,
@@ -231,6 +311,8 @@ function titleFor(kind: CareKind, text: string): string {
   if (kind === "feeding") return "喂奶记录";
   if (kind === "sleep") return /醒/.test(text) ? "醒来记录" : "睡眠记录";
   if (kind === "diaper") return "换尿布记录";
+  if (kind === "temperature") return "体温记录";
+  if (kind === "medicine") return "用药记录";
   return "日常备注";
 }
 
@@ -293,6 +375,12 @@ function parseClause(
   const needsTimeConfirmation = Boolean(parsedTime?.ambiguous);
   const capturedAt = parsedTime?.value ?? localDateTime(now);
   const title = titleFor(kind, clause);
+  const medical =
+    kind === "temperature"
+      ? { temperatureC: parseTemperature(clause), site: parseSite(clause) }
+      : kind === "medicine"
+        ? parseMedicine(clause)
+        : {};
   return {
     id: `voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     kind,
@@ -306,6 +394,7 @@ function parseClause(
     sleepState,
     diaper,
     ...feedingFields,
+    ...medical,
     sourceText: clause,
   };
 }
@@ -331,6 +420,10 @@ function parseNoteClause(clause: string, now: Date): VoiceDraft {
     feedingMinutes: undefined,
     food: undefined,
     reaction: undefined,
+    temperatureC: undefined,
+    site: undefined,
+    medicineName: undefined,
+    dose: undefined,
   };
 }
 
@@ -387,6 +480,17 @@ export function validateVoiceDraft(draft: VoiceDraft): string | null {
     if (value !== undefined && (!Number.isFinite(value) || value <= 0))
       return "数量和时长需要是大于 0 的数字，也可以留空。";
   }
+  if (draft.kind === "temperature") {
+    if (draft.temperatureC === undefined) return "体温记录需要填写摄氏度数值。";
+    if (
+      !Number.isFinite(draft.temperatureC) ||
+      draft.temperatureC < TEMPERATURE_MIN ||
+      draft.temperatureC > TEMPERATURE_MAX
+    )
+      return `体温需要在 ${TEMPERATURE_MIN}–${TEMPERATURE_MAX}℃ 之间，请核对后再保存。`;
+  }
+  if (draft.kind === "medicine" && !draft.medicineName?.trim())
+    return "用药记录需要填写药名。";
   return null;
 }
 
@@ -404,6 +508,10 @@ export function voiceDraftToEntry(
       feedingMinutes: draft.feedingMinutes,
       food: draft.food,
       reaction: draft.reaction,
+      temperatureC: draft.temperatureC,
+      site: draft.site,
+      medicineName: draft.medicineName,
+      dose: draft.dose,
     }).filter(([, value]) => value !== undefined),
   ) as CareFields;
   return {

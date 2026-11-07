@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from "vue";
-import { Baby, Milk, Moon } from "@lucide/vue";
+import { Baby, Milk, Moon, Pill, Thermometer } from "@lucide/vue";
 import type { GrowthEntry } from "../types";
 import type { CareKind } from "../domain/care-types";
 import { localDate, formatTime } from "../domain/date";
-import { describeCare, summarizeMilk } from "../domain/care-records";
+import {
+  describeCare,
+  hoursSince,
+  lastMedicineEntry,
+  summarizeMilk,
+  summarizeTemperature,
+} from "../domain/care-records";
 import {
   deriveSleepSegments,
   formatMinutes,
@@ -21,9 +27,17 @@ const categories = [
   { kind: "feeding", title: "喂奶", icon: Milk },
   { kind: "sleep", title: "睡眠", icon: Moon },
   { kind: "diaper", title: "换尿布", icon: Baby },
+  { kind: "temperature", title: "体温", icon: Thermometer },
+  { kind: "medicine", title: "用药", icon: Pill },
 ] as const;
 const now = ref(Date.now());
 const milk = computed(() => summarizeMilk(props.entries));
+const temperature = computed(() =>
+  summarizeTemperature(props.entries, localDate()),
+);
+const lastMedicine = computed(() =>
+  lastMedicineEntry(props.entries, new Date(now.value)),
+);
 const sleep = computed(() =>
   sleepSummaryForDay(deriveSleepSegments(props.entries), localDate()),
 );
@@ -121,6 +135,15 @@ const latest = computed(() => {
     <p v-if="reference" class="milk-summary">
       下次喂奶参考：约 {{ reference.time }} · 按最近
       {{ reference.sampleSize }} 次间隔{{ reference.passed ? "（已过）" : "" }}
+    </p>
+    <p v-if="temperature" class="milk-summary">
+      今日最高体温：{{ temperature.maxC }}℃ · {{ formatTime(temperature.at)
+      }}<span v-if="temperature.count > 1">（共 {{ temperature.count }} 次）</span>
+    </p>
+    <p v-if="temperature && lastMedicine" class="milk-summary">
+      距上次用药：{{ hoursSince(lastMedicine.capturedAt, new Date(now)) }} · 上次
+      {{ formatTime(lastMedicine.capturedAt) }}
+      {{ describeCare(lastMedicine.care!) }}
     </p>
     <p v-if="sleep.totalMinutes" class="milk-summary">
       今日睡眠：共 {{ formatMinutes(sleep.totalMinutes) }} · 最长一段

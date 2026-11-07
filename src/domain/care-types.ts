@@ -1,4 +1,30 @@
-export type CareKind = "feeding" | "sleep" | "diaper" | "note";
+export type CareKind =
+  | "feeding"
+  | "sleep"
+  | "diaper"
+  | "note"
+  | "temperature"
+  | "medicine";
+
+export type TemperatureSite = "ear" | "forehead" | "armpit" | "rectal";
+
+export const TEMPERATURE_SITES: readonly TemperatureSite[] = [
+  "ear",
+  "forehead",
+  "armpit",
+  "rectal",
+];
+
+export const SITE_LABELS: Record<TemperatureSite, string> = {
+  ear: "耳温",
+  forehead: "额温",
+  armpit: "腋下",
+  rectal: "肛温",
+};
+
+/** 体温合理范围；超出就要求家长核对，不做任何判断。 */
+export const TEMPERATURE_MIN = 34;
+export const TEMPERATURE_MAX = 43;
 
 export type FeedingMethod =
   | "breast"
@@ -28,6 +54,14 @@ export interface CareFields {
   feedingMinutes?: number;
   food?: string;
   reaction?: string;
+  /** 体温，摄氏度。 */
+  temperatureC?: number;
+  /** 测温部位。 */
+  site?: TemperatureSite;
+  /** 药名，保留家长说的原文。 */
+  medicineName?: string;
+  /** 剂量，保留原文，例如「2.5ml」；不做任何换算或推荐。 */
+  dose?: string;
 }
 
 export interface CareObservation extends CareFields {
@@ -63,6 +97,8 @@ export const CARE_LABELS: Record<CareKind, string> = {
   sleep: "睡眠",
   diaper: "换尿布",
   note: "日常备注",
+  temperature: "体温",
+  medicine: "用药",
 };
 
 /** 手动记录里「放进哪一类」与照护类型的对应关系，非照护标签返回 undefined。 */
@@ -71,6 +107,8 @@ const TAG_CARE_KINDS: Record<string, CareKind> = {
   睡眠: "sleep",
   换尿布: "diaper",
   日常备注: "note",
+  体温: "temperature",
+  用药: "medicine",
 };
 
 export function careFromTag(

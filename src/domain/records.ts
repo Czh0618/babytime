@@ -6,6 +6,7 @@ import type {
   Workspace,
 } from "../types.ts";
 import { demoWorkspace } from "./seed.ts";
+import { TEMPERATURE_MAX, TEMPERATURE_MIN } from "./care-types.ts";
 
 export function validateEntry(
   draft: EntryDraft,
@@ -17,12 +18,30 @@ export function validateEntry(
     return "请填写记录时间。";
   if (draft.note.length > 500) return "备注最多填写 500 个字。";
   if (draft.care) {
-    if (!["feeding", "sleep", "diaper", "note"].includes(draft.care.kind))
+    if (
+      ![
+        "feeding",
+        "sleep",
+        "diaper",
+        "note",
+        "temperature",
+        "medicine",
+      ].includes(draft.care.kind)
+    )
       return "请选择有效的照护类型。";
     for (const value of [draft.care.amountMl, draft.care.durationMinutes]) {
       if (value !== undefined && (!Number.isFinite(value) || value <= 0))
         return "奶量或时长需要填写大于 0 的数字，也可以留空。";
     }
+    if (draft.care.kind === "temperature") {
+      const value = draft.care.temperatureC;
+      if (value === undefined || !Number.isFinite(value))
+        return "请填写体温。";
+      if (value < TEMPERATURE_MIN || value > TEMPERATURE_MAX)
+        return `体温需要在 ${TEMPERATURE_MIN}–${TEMPERATURE_MAX}℃ 之间，请核对。`;
+    }
+    if (draft.care.kind === "medicine" && !draft.care.medicineName?.trim())
+      return "请填写药名。";
   }
   if (draft.start !== undefined || draft.end !== undefined) {
     const { start, end } = draft;

@@ -5,7 +5,7 @@ import ModalDialog from "./ModalDialog.vue";
 import MediaTile from "./MediaTile.vue";
 import { localDateTime } from "../domain/date";
 import { validateEntry } from "../domain/records";
-import { CARE_LABELS, careFromTag, type CareKind } from "../domain/care-types";
+import { CARE_LABELS, SITE_LABELS, careFromTag, type CareKind } from "../domain/care-types";
 import { prepareMediaFile, type PreparedMedia } from "../lib/media";
 import {
   ENTRY_TAGS,
@@ -332,6 +332,55 @@ function startPlayback() {
             <option value="mixed">尿湿和便便</option>
           </select></label
         >
+        <label v-if="draft.care.kind === 'temperature'" class="field"
+          ><span>体温（℃）</span
+          ><input
+            :value="draft.care.temperatureC ?? ''"
+            type="number"
+            min="34"
+            max="43"
+            step="0.1"
+            inputmode="decimal"
+            @input="draft.care.temperatureC = numberInput($event)"
+        /></label>
+        <label v-if="draft.care.kind === 'temperature'" class="field"
+          ><span>测温部位（可选）</span
+          ><select
+            :value="draft.care.site ?? ''"
+            @change="
+              draft.care.site =
+                (($event.target as HTMLSelectElement)
+                  .value as keyof typeof SITE_LABELS) || undefined
+            "
+          >
+            <option value="">未选择</option>
+            <option v-for="(label, site) in SITE_LABELS" :key="site" :value="site">
+              {{ label }}
+            </option>
+          </select></label
+        >
+        <label v-if="draft.care.kind === 'medicine'" class="field"
+          ><span>药名</span
+          ><input
+            :value="draft.care.medicineName ?? ''"
+            maxlength="30"
+            placeholder="例如：美林"
+            @input="
+              draft.care.medicineName =
+                ($event.target as HTMLInputElement).value || undefined
+            "
+        /></label>
+        <label v-if="draft.care.kind === 'medicine'" class="field"
+          ><span>剂量（保留原文，如 2.5ml）</span
+          ><input
+            :value="draft.care.dose ?? ''"
+            maxlength="20"
+            placeholder="例如：2.5ml"
+            @input="
+              draft.care.dose =
+                ($event.target as HTMLInputElement).value || undefined
+            "
+        /></label>
       </div>
       <div
         v-if="currentMedia?.kind === 'video' && currentMedia.duration"

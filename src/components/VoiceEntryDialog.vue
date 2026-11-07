@@ -12,6 +12,7 @@ import {
 import ModalDialog from "./ModalDialog.vue";
 import {
   CARE_LABELS,
+  SITE_LABELS,
   type CareKind,
   type VoiceDraft,
 } from "../domain/care-types";
@@ -244,7 +245,7 @@ async function parseWithAI() {
   }
 }
 
-/** 把识别出的喂养细分字段用与记录详情一致的措辞展示，方便家长核对。 */
+/** 把识别出的细分字段用与记录详情一致的措辞展示，方便家长核对。 */
 function draftExtras(draft: VoiceDraft): string {
   if (
     !draft.feedingMethod &&
@@ -252,7 +253,9 @@ function draftExtras(draft: VoiceDraft): string {
     !draft.reaction &&
     !draft.feedingMinutes &&
     !draft.leftMinutes &&
-    !draft.rightMinutes
+    !draft.rightMinutes &&
+    draft.temperatureC === undefined &&
+    !draft.medicineName
   )
     return "";
   return describeCare({
@@ -266,6 +269,10 @@ function draftExtras(draft: VoiceDraft): string {
     feedingMinutes: draft.feedingMinutes,
     food: draft.food,
     reaction: draft.reaction,
+    temperatureC: draft.temperatureC,
+    site: draft.site,
+    medicineName: draft.medicineName,
+    dose: draft.dose,
   });
 }
 
@@ -286,6 +293,10 @@ function changeKind(index: number, value: CareKind) {
     durationMinutes: undefined,
     sleepState: undefined,
     diaper: undefined,
+    temperatureC: undefined,
+    site: undefined,
+    medicineName: undefined,
+    dose: undefined,
   });
 }
 
@@ -602,6 +613,65 @@ onBeforeUnmount(() => {
             <option value="mixed">尿湿和便便</option>
           </select></label
         >
+        <label v-if="draft.kind === 'temperature'" class="field"
+          ><span>体温（℃）<small>34–43</small></span
+          ><input
+            :value="draft.temperatureC ?? ''"
+            type="number"
+            min="34"
+            max="43"
+            step="0.1"
+            inputmode="decimal"
+            @input="
+              updateDraft(index, {
+                temperatureC: numberInput(
+                  ($event.target as HTMLInputElement).value,
+                ),
+              })
+            "
+        /></label>
+        <label v-if="draft.kind === 'temperature'" class="field"
+          ><span>测温部位 <small>可选</small></span
+          ><select
+            :value="draft.site ?? ''"
+            @change="
+              updateDraft(index, {
+                site: (($event.target as HTMLSelectElement).value ||
+                  undefined) as VoiceDraft['site'],
+              })
+            "
+          >
+            <option value="">未选择</option>
+            <option v-for="(label, site) in SITE_LABELS" :key="site" :value="site">
+              {{ label }}
+            </option>
+          </select></label
+        >
+        <label v-if="draft.kind === 'medicine'" class="field"
+          ><span>药名</span
+          ><input
+            :value="draft.medicineName ?? ''"
+            maxlength="30"
+            placeholder="例如：美林"
+            @input="
+              updateDraft(index, {
+                medicineName:
+                  ($event.target as HTMLInputElement).value || undefined,
+              })
+            "
+        /></label>
+        <label v-if="draft.kind === 'medicine'" class="field"
+          ><span>剂量 <small>保留原文，如 2.5ml</small></span
+          ><input
+            :value="draft.dose ?? ''"
+            maxlength="20"
+            placeholder="例如：2.5ml"
+            @input="
+              updateDraft(index, {
+                dose: ($event.target as HTMLInputElement).value || undefined,
+              })
+            "
+        /></label>
         <label class="field"
           ><span>备注 <small>可选</small></span
           ><textarea

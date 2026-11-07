@@ -1,4 +1,5 @@
 import type { CareObservation, VoiceDraft } from "./care-types.ts";
+import { SITE_LABELS } from "./care-types.ts";
 import type { GrowthEntry, Workspace } from "../types.ts";
 import { validateVoiceDraft, voiceDraftToEntry } from "./voice-parser.ts";
 import { validateEntry } from "./records.ts";
@@ -72,7 +73,77 @@ export function describeCare(care: CareObservation): string {
         changed: "已更换",
       } as const
     )[care.diaper || "changed"];
+  if (care.kind === "temperature") {
+    if (care.temperatureC === undefined) return "已记录体温";
+    const site = care.site ? `（${SITE_LABELS[care.site]}）` : "";
+    return `体温 ${care.temperatureC}℃${site}`;
+  }
+  if (care.kind === "medicine") {
+    const name = care.medicineName || "用药";
+    return care.dose ? `${name} ${care.dose}` : name;
+  }
   return "家长备注";
+}
+
+export interface TemperatureSummary {
+  /** 当天最高体温，摄氏度。 */
+  maxC: number;
+  /** 最高那次的时间。 */
+  at: string;
+  count: number;
+}
+
+/** 当天最高体温；只陈述数字与部位，不做任何健康判断。 */
+export function summarizeTemperature(
+  entries: GrowthEntry[],
+  onDate = localDate(),
+): TemperatureSummary | null {
+  let result: TemperatureSummary | null = null;
+  for (const entry of entries) {
+    const care = entry.care;
+    if (
+      !care ||
+      care.kind !== "temperature" ||
+      care.temperatureC === undefined ||
+      entry.capturedAt.slice(0, 10) !== onDate
+    )
+      continue;
+    if (!result)
+      result = { maxC: care.temperatureC, at: entry.capturedAt, count: 1 };
+    else {
+      result.count++;
+      if (care.temperatureC > result.maxC) {
+        result.maxC = care.temperatureC;
+        result.at = entry.capturedAt;
+      }
+    }
+  }
+  return result;
+}
+
+/** 最近一次用药记录（不看日期，用于「距上次用药」）。 */
+export function lastMedicineEntry(
+  entries: GrowthEntry[],
+  now = new Date(),
+): GrowthEntry | undefined {
+  const limit = now.getTime();
+  return [...entries]
+    .filter(
+      (entry) =>
+        entry.care?.kind === "medicine" &&
+        Date.parse(entry.capturedAt) <= limit,
+    )
+    .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt))[0];
+}
+
+export function hoursSince(capturedAt: string, now = new Date()): string {
+  const minutes = Math.max(
+    0,
+    Math.round((now.getTime() - Date.parse(capturedAt)) / 60_000),
+  );
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = minutes / 60;
+  return hours < 10 ? `${hours.toFixed(1)} 小时` : `${Math.round(hours)} 小时`;
 }
 
 export interface MilkSummary {

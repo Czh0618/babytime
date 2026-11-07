@@ -308,3 +308,74 @@ test("AI.1 多余字段被忽略，非喂养记录不带喂养字段", () => {
   assert.equal(draft!.feedingMethod, undefined);
   assert.equal("extraField" in draft!, false);
 });
+
+test("AI.1 体温合法值保留，越界丢弃并提示核对", () => {
+  const [ok] = parseAIVoiceDrafts(
+    JSON.stringify({
+      items: [
+        {
+          kind: "temperature",
+          capturedAt: "2026-11-07T15:30",
+          temperatureC: 38.5,
+          site: "ear",
+          sourceText: "耳温38度5",
+        },
+      ],
+    }),
+    "耳温38度5",
+  );
+  assert.equal(ok!.temperatureC, 38.5);
+  assert.equal(ok!.site, "ear");
+  assert.equal(ok!.reviewNote, undefined);
+
+  const [hot] = parseAIVoiceDrafts(
+    JSON.stringify({
+      items: [
+        { kind: "temperature", capturedAt: "2026-11-07T15:30", temperatureC: 45, sourceText: "发烧" },
+      ],
+    }),
+    "发烧",
+  );
+  assert.equal(hot!.temperatureC, undefined);
+  assert.match(hot!.reviewNote ?? "", /体温/);
+});
+
+test("AI.1 未知测温部位与多余字段被丢弃，药名与剂量原样保留", () => {
+  const [draft] = parseAIVoiceDrafts(
+    JSON.stringify({
+      items: [
+        {
+          kind: "temperature",
+          capturedAt: "2026-11-07T15:30",
+          temperatureC: 37.8,
+          site: "mouth",
+          amountMl: 120,
+          sourceText: "口腔37度8",
+        },
+      ],
+    }),
+    "口腔37度8",
+  );
+  assert.equal(draft!.site, undefined);
+  assert.equal(draft!.amountMl, undefined);
+  assert.match(draft!.reviewNote ?? "", /测温部位/);
+
+  const [medicine] = parseAIVoiceDrafts(
+    JSON.stringify({
+      items: [
+        {
+          kind: "medicine",
+          capturedAt: "2026-11-07T15:30",
+          medicineName: "美林",
+          dose: "2.5ml",
+          temperatureC: 38.5,
+          sourceText: "喂了美林2.5ml",
+        },
+      ],
+    }),
+    "喂了美林2.5ml",
+  );
+  assert.equal(medicine!.medicineName, "美林");
+  assert.equal(medicine!.dose, "2.5ml");
+  assert.equal(medicine!.temperatureC, undefined, "用药记录不夹带体温字段");
+});

@@ -74,16 +74,22 @@ function validCare(value: unknown): boolean {
   const care = value as Record<string, unknown>;
   return (
     typeof care.kind === "string" &&
-    ["feeding", "sleep", "diaper", "note"].includes(care.kind) &&
+    ["feeding", "sleep", "diaper", "note", "temperature", "medicine"].includes(
+      care.kind,
+    ) &&
     typeof care.sourceText === "string" &&
     optionalString(care.inputId) &&
     optionalNumber(care.amountMl) &&
     optionalNumber(care.durationMinutes) &&
+    optionalNumber(care.temperatureC) &&
     optionalNumber(care.leftMinutes) &&
     optionalNumber(care.rightMinutes) &&
     optionalNumber(care.feedingMinutes) &&
     optionalString(care.food) &&
     optionalString(care.reaction) &&
+    optionalString(care.medicineName) &&
+    optionalString(care.dose) &&
+    optionalEnum(care.site, ["ear", "forehead", "armpit", "rectal"]) &&
     optionalEnum(care.feedingMethod, [
       "breast",
       "bottle-formula",
