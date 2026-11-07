@@ -23,10 +23,24 @@ import VoiceEntryDialog from "./components/VoiceEntryDialog.vue";
 import VoiceEntryCard from "./components/VoiceEntryCard.vue";
 import AiSettingsDialog from "./components/AiSettingsDialog.vue";
 import BackupReminder from "./components/BackupReminder.vue";
+import QuickLogCard from "./components/QuickLogCard.vue";
 import TodayCareSummary from "./components/TodayCareSummary.vue";
 import AgeGuideCard from "./components/AgeGuideCard.vue";
 import type { ParentActivity } from "./data/age-guides";
 import type { VoiceDraft } from "./domain/care-types";
+import {
+  startTimer as createTimer,
+  switchTimerSide,
+  timerDraft,
+  type TimerKind,
+  type TimerSide,
+} from "./domain/timer";
+import { voiceDraftToEntry } from "./domain/voice-parser";
+import {
+  clearActiveTimer,
+  readActiveTimer,
+  writeActiveTimer,
+} from "./lib/timer";
 import { localDateTime } from "./domain/date";
 import { useWorkspace } from "./lib/workspace";
 import {
@@ -207,6 +221,44 @@ function openVoice() {
   formError.value = "";
   overlay.value = { kind: "voice" };
 }
+const activeTimer = ref(readActiveTimer());
+
+/** 计时只存开始时间，页面被杀掉后重新打开仍能算回原时长。 */
+function startTimer(kind: TimerKind, side: TimerSide = "left") {
+  if (activeTimer.value) return;
+  const next = createTimer(kind, new Date(), side);
+  writeActiveTimer(next);
+  activeTimer.value = next;
+  say(kind === "feeding" ? "已开始亲喂计时，可以随时换边。" : "已开始睡眠计时。");
+}
+
+function switchTimer(side: TimerSide) {
+  if (!activeTimer.value) return;
+  const next = switchTimerSide(activeTimer.value, side, new Date());
+  writeActiveTimer(next);
+  activeTimer.value = next;
+}
+
+/** 结束计时走现有确认流程：先给草稿，家长确认后才落库。 */
+function finishTimer() {
+  const timer = activeTimer.value;
+  if (!timer) return;
+  const draft = voiceDraftToEntry(
+    timerDraft(timer, new Date()),
+    `timer-${Date.now()}`,
+  );
+  clearActiveTimer();
+  activeTimer.value = null;
+  formError.value = "";
+  overlay.value = { kind: "editor", initialDraft: draft };
+}
+
+function cancelTimer() {
+  clearActiveTimer();
+  activeTimer.value = null;
+  say("已放弃这次计时，没有生成记录。");
+}
+
 function openActivity(activity: ParentActivity) {
   formError.value = "";
   overlay.value = {
@@ -519,6 +571,14 @@ onBeforeUnmount(() => {
               @dismiss="backupDismissed = true"
             />
             <VoiceEntryCard @start="openVoice" />
+            <QuickLogCard
+              :timer="activeTimer"
+              :night="night"
+              @start="startTimer"
+              @switch="switchTimer"
+              @finish="finishTimer"
+              @cancel="cancelTimer"
+            />
             <TodayCareSummary
               :entries="workspace.entries"
               :night="night"
