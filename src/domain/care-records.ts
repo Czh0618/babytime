@@ -5,6 +5,8 @@ import { validateVoiceDraft, voiceDraftToEntry } from "./voice-parser.ts";
 import { validateEntry } from "./records.ts";
 import { createId } from "./id.ts";
 import { localDate } from "./date.ts";
+import { nextDose } from "./vaccines.ts";
+import { VACCINE_BY_CODE } from "../data/vaccines-2026.ts";
 
 export function addVoiceEntries(
   workspace: Workspace,
@@ -20,6 +22,7 @@ export function addVoiceEntries(
     workspace.entries.map((entry) => entry.care?.inputId).filter(Boolean),
   );
   const additions: GrowthEntry[] = [];
+  const vaccinations = (workspace.vaccinations ??= []);
   for (const draft of drafts) {
     const error = validateVoiceDraft(draft);
     if (error) throw new Error(error);
@@ -29,6 +32,21 @@ export function addVoiceEntries(
     const entryError = validateEntry(entry);
     if (entryError) throw new Error(entryError);
     additions.push({ ...entry, id: makeId(), favorite: false });
+    // 接种记录同时写进疫苗计划：关联到这支疫苗下一剂未种的剂次。
+    if (draft.kind === "vaccination" && draft.vaccineCode) {
+      if (!vaccinations.some((item) => item.inputId === inputId)) {
+        const spec = VACCINE_BY_CODE[draft.vaccineCode];
+        vaccinations.push({
+          id: makeId(),
+          code: draft.vaccineCode,
+          name: spec?.name ?? draft.vaccineName,
+          dose: nextDose(vaccinations, draft.vaccineCode) ?? 1,
+          date: draft.capturedAt.slice(0, 10),
+          createdAt: new Date().toISOString(),
+          inputId,
+        });
+      }
+    }
   }
   workspace.entries.push(...additions);
   return additions.length;
@@ -81,6 +99,13 @@ export function describeCare(care: CareObservation): string {
   if (care.kind === "medicine") {
     const name = care.medicineName || "用药";
     return care.dose ? `${name} ${care.dose}` : name;
+  }
+  if (care.kind === "vaccination") {
+    const name =
+      care.vaccineName ||
+      (care.vaccineCode ? VACCINE_BY_CODE[care.vaccineCode]?.name : "") ||
+      "疫苗";
+    return `接种 ${name}`;
   }
   return "家长备注";
 }

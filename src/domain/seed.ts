@@ -9,6 +9,8 @@ export function emptyWorkspace(): Workspace {
     candidates: [],
     entries: [],
     recaps: [],
+    vaccinations: [],
+    vaccinePlan: { specialProgram: false, choices: {} },
   };
 }
 

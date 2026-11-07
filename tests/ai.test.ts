@@ -379,3 +379,40 @@ test("AI.1 未知测温部位与多余字段被丢弃，药名与剂量原样保
   assert.equal(medicine!.dose, "2.5ml");
   assert.equal(medicine!.temperatureC, undefined, "用药记录不夹带体温字段");
 });
+
+test("AI.1 接种：命中程序内的缩写保留，未知缩写降级为备注", () => {
+  const [ok] = parseAIVoiceDrafts(
+    JSON.stringify({
+      items: [
+        {
+          kind: "vaccination",
+          capturedAt: "2026-11-07T15:00",
+          vaccineCode: "DTaP",
+          vaccineName: "百白破疫苗",
+          sourceText: "下午打了百白破疫苗",
+        },
+      ],
+    }),
+    "下午打了百白破疫苗",
+  );
+  assert.equal(ok!.kind, "vaccination");
+  assert.equal(ok!.vaccineCode, "DTaP");
+
+  const [unknown] = parseAIVoiceDrafts(
+    JSON.stringify({
+      items: [
+        {
+          kind: "vaccination",
+          capturedAt: "2026-11-07T15:00",
+          vaccineCode: "PCV13",
+          vaccineName: "13 价肺炎",
+          sourceText: "打了13价肺炎",
+        },
+      ],
+    }),
+    "打了13价肺炎",
+  );
+  assert.equal(unknown!.kind, "note");
+  assert.equal(unknown!.vaccineCode, undefined);
+  assert.match(unknown!.reviewNote ?? "", /日常备注/);
+});

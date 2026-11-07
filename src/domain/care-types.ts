@@ -4,7 +4,8 @@ export type CareKind =
   | "diaper"
   | "note"
   | "temperature"
-  | "medicine";
+  | "medicine"
+  | "vaccination";
 
 export type TemperatureSite = "ear" | "forehead" | "armpit" | "rectal";
 
@@ -62,6 +63,10 @@ export interface CareFields {
   medicineName?: string;
   /** 剂量，保留原文，例如「2.5ml」；不做任何换算或推荐。 */
   dose?: string;
+  /** 疫苗缩写（对应 vaccines-2026.ts），仅接种记录使用。 */
+  vaccineCode?: string;
+  /** 疫苗名称，语音里说的原文。 */
+  vaccineName?: string;
 }
 
 export interface CareObservation extends CareFields {
@@ -99,6 +104,7 @@ export const CARE_LABELS: Record<CareKind, string> = {
   note: "日常备注",
   temperature: "体温",
   medicine: "用药",
+  vaccination: "接种",
 };
 
 /** 手动记录里「放进哪一类」与照护类型的对应关系，非照护标签返回 undefined。 */
@@ -109,6 +115,7 @@ const TAG_CARE_KINDS: Record<string, CareKind> = {
   日常备注: "note",
   体温: "temperature",
   用药: "medicine",
+  接种: "vaccination",
 };
 
 export function careFromTag(

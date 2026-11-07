@@ -74,9 +74,15 @@ function validCare(value: unknown): boolean {
   const care = value as Record<string, unknown>;
   return (
     typeof care.kind === "string" &&
-    ["feeding", "sleep", "diaper", "note", "temperature", "medicine"].includes(
-      care.kind,
-    ) &&
+    [
+      "feeding",
+      "sleep",
+      "diaper",
+      "note",
+      "temperature",
+      "medicine",
+      "vaccination",
+    ].includes(care.kind) &&
     typeof care.sourceText === "string" &&
     optionalString(care.inputId) &&
     optionalNumber(care.amountMl) &&
@@ -89,6 +95,8 @@ function validCare(value: unknown): boolean {
     optionalString(care.reaction) &&
     optionalString(care.medicineName) &&
     optionalString(care.dose) &&
+    optionalString(care.vaccineCode) &&
+    optionalString(care.vaccineName) &&
     optionalEnum(care.site, ["ear", "forehead", "armpit", "rectal"]) &&
     optionalEnum(care.feedingMethod, [
       "breast",
@@ -119,6 +127,20 @@ function validItems<T extends { id: string }>(
   });
 }
 
+function validVaccinePlan(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const plan = value as Record<string, unknown>;
+  const choices = plan.choices;
+  if (!choices || typeof choices !== "object" || Array.isArray(choices))
+    return false;
+  const option = choices as Record<string, unknown>;
+  return (
+    typeof plan.specialProgram === "boolean" &&
+    optionalEnum(option.je, ["JE-L", "JE-I"]) &&
+    optionalEnum(option.hepa, ["HepA-L", "HepA-I"])
+  );
+}
+
 /** 导入来自外部文件的数据前，检查界面和编辑流程直接使用的字段。 */
 function validBackupWorkspace(workspace: Workspace): boolean {
   return (
@@ -146,7 +168,15 @@ function validBackupWorkspace(workspace: Workspace): boolean {
     validItems(workspace.recaps, (item) =>
       typeof item.title === "string" && typeof item.dateFrom === "string" &&
       typeof item.dateTo === "string" && typeof item.createdAt === "string" &&
-      Array.isArray(item.entryIds) && item.entryIds.every((id) => typeof id === "string"))
+      Array.isArray(item.entryIds) && item.entryIds.every((id) => typeof id === "string")) &&
+    (workspace.vaccinations === undefined ||
+      validItems(workspace.vaccinations, (item) =>
+        typeof item.code === "string" && typeof item.date === "string" &&
+        finiteNumber(item.dose) && item.dose > 0 &&
+        typeof item.createdAt === "string" &&
+        optionalString(item.name) && optionalString(item.clinic) &&
+        optionalString(item.lot) && optionalString(item.inputId))) &&
+    (workspace.vaccinePlan === undefined || validVaccinePlan(workspace.vaccinePlan))
   );
 }
 

@@ -34,10 +34,20 @@ import {
 import { inspectMedia, validateMediaFile, type PreparedMedia } from "./media";
 import { isWorkspace } from "../domain/workspace-schema";
 import { validateProfile } from "../domain/profile";
+import { defaultVaccinePlan } from "../domain/vaccines";
+import type { VaccinationRecord, VaccinePlan } from "../types";
 import { decodeBackup } from "./backup";
 import { addVoiceEntries } from "../domain/care-records";
 import type { VoiceDraft } from "../domain/care-types";
 import type { AICaption } from "../domain/ai";
+
+/** 旧数据没有疫苗字段；读入时补默认值，界面就不用到处判空。 */
+function normalizeVaccines(target: Workspace) {
+  if (!Array.isArray(target.vaccinations)) target.vaccinations = [];
+  const plan = target.vaccinePlan;
+  if (!plan || typeof plan !== "object" || !plan.choices)
+    target.vaccinePlan = defaultVaccinePlan();
+}
 
 export function useWorkspace() {
   const workspace = ref<Workspace>(emptyWorkspace());
@@ -92,6 +102,7 @@ export function useWorkspace() {
         if (!isWorkspace(saved))
           throw new Error("本机数据格式暂不支持，原有内容未被修改。");
         workspace.value = saved;
+        normalizeVaccines(workspace.value);
       } else await writeWorkspace(workspace.value); // 首次进入为空白工作区，示例由用户主动加载
       await attachMedia(workspace.value);
     } catch (error) {
@@ -107,6 +118,7 @@ export function useWorkspace() {
   /** 用备份覆盖当前工作区；返回原片不在本机的素材数量。 */
   async function restore(file: File) {
     const { workspace: next, mediaFiles } = decodeBackup(await file.text());
+    normalizeVaccines(next);
     const action = writes
       .catch(() => {})
       .then(async () => {
@@ -366,6 +378,41 @@ export function useWorkspace() {
     return recap;
   }
 
+  async function addVaccination(
+    record: Omit<VaccinationRecord, "id" | "createdAt">,
+  ): Promise<string> {
+    const id = createId();
+    await update((next) => {
+      normalizeVaccines(next);
+      const list = next.vaccinations!;
+      if (
+        record.code !== "custom" &&
+        list.some(
+          (item) => item.code === record.code && item.dose === record.dose,
+        )
+      )
+        throw new Error("这一剂已经记过了。");
+      list.push({ ...record, id, createdAt: new Date().toISOString() });
+    });
+    return id;
+  }
+
+  async function removeVaccination(id: string) {
+    await update((next) => {
+      normalizeVaccines(next);
+      next.vaccinations = next.vaccinations!.filter((item) => item.id !== id);
+    });
+  }
+
+  async function saveVaccinePlan(plan: VaccinePlan) {
+    await update((next) => {
+      next.vaccinePlan = {
+        specialProgram: Boolean(plan.specialProgram),
+        choices: { ...plan.choices },
+      };
+    });
+  }
+
   async function saveProfile(baby: BabyProfile) {
     const error = validateProfile(baby);
     if (error) throw new Error(error);
@@ -425,6 +472,9 @@ export function useWorkspace() {
     applyCandidateSuggestion,
     deleteEntry,
     createRecap,
+    addVaccination,
+    removeVaccination,
+    saveVaccinePlan,
     saveProfile,
     clearDemo,
     loadDemo,

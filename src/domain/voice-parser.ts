@@ -9,6 +9,7 @@ import {
   type VoiceDraft,
 } from "./care-types.ts";
 import type { EntryDraft } from "../types.ts";
+import { matchVaccine } from "../data/vaccines-2026.ts";
 
 const NEGATIVE = /(?:没(?:有)?|没有|还没|尚未|未|不曾|不用|不要)/;
 const TIME_PATTERN =
@@ -160,6 +161,8 @@ function isNegative(text: string, keyword: RegExp): boolean {
 }
 
 function kindFor(text: string): CareKind {
+  // 接种优先：疫苗名里常带「乙肝」「流脑」，先判掉避免被其他规则抢走。
+  if (/(?:疫苗|接种|打了.*针|打针)/.test(text)) return "vaccination";
   // 体温与用药优先判断：「发烧 38 度 5，喂了美林」要拆成两条，不能被喂奶规则吃掉。
   if (
     /(?:发烧|发热|体温|测了?温度|℃)|[0-9零〇一二两三四五六七八九十]{2}\s*(?:[.．][0-9]|[度℃])/.test(
@@ -313,6 +316,7 @@ function titleFor(kind: CareKind, text: string): string {
   if (kind === "diaper") return "换尿布记录";
   if (kind === "temperature") return "体温记录";
   if (kind === "medicine") return "用药记录";
+  if (kind === "vaccination") return "接种记录";
   return "日常备注";
 }
 
@@ -380,7 +384,14 @@ function parseClause(
       ? { temperatureC: parseTemperature(clause), site: parseSite(clause) }
       : kind === "medicine"
         ? parseMedicine(clause)
-        : {};
+        : kind === "vaccination"
+          ? (() => {
+              const spec = matchVaccine(clause);
+              return spec
+                ? { vaccineCode: spec.code, vaccineName: spec.name }
+                : {};
+            })()
+          : {};
   return {
     id: `voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     kind,
@@ -424,6 +435,8 @@ function parseNoteClause(clause: string, now: Date): VoiceDraft {
     site: undefined,
     medicineName: undefined,
     dose: undefined,
+    vaccineCode: undefined,
+    vaccineName: undefined,
   };
 }
 
@@ -451,9 +464,15 @@ export function parseVoiceTranscript(
             ? /尿布|尿不湿|便便|换/
             : /.+/;
     if (kind !== "note" && isNegative(clause, keyword)) continue;
+    // 疫苗名认不出来（如自费疫苗）就退化成备注，不生成对不上程序的接种记录。
+    if (kind === "vaccination" && !matchVaccine(clause)) {
+      result.push(parseNoteClause(clause, now));
+      continue;
+    }
     const draft = parseClause(clause, now, inheritedPeriod);
-    const explicitPeriod =
-      clause.match(/凌晨|早上|上午|中午|下午|傍晚|晚上/)?.[0];
+    const explicitPeriod = clause.match(
+      /凌晨|早上|上午|中午|下午|傍晚|晚上/,
+    )?.[0];
     if (explicitPeriod) inheritedPeriod = explicitPeriod;
     result.push(draft);
   }
@@ -491,6 +510,8 @@ export function validateVoiceDraft(draft: VoiceDraft): string | null {
   }
   if (draft.kind === "medicine" && !draft.medicineName?.trim())
     return "用药记录需要填写药名。";
+  if (draft.kind === "vaccination" && !draft.vaccineCode)
+    return "接种记录需要能对上免疫程序里的疫苗，认不出可改为日常备注。";
   return null;
 }
 
@@ -512,6 +533,8 @@ export function voiceDraftToEntry(
       site: draft.site,
       medicineName: draft.medicineName,
       dose: draft.dose,
+      vaccineCode: draft.vaccineCode,
+      vaccineName: draft.vaccineName,
     }).filter(([, value]) => value !== undefined),
   ) as CareFields;
   return {

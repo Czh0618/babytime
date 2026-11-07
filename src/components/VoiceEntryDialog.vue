@@ -18,6 +18,7 @@ import {
 } from "../domain/care-types";
 import { localDateTime } from "../domain/date";
 import { describeCare } from "../domain/care-records";
+import { VACCINES_2026 } from "../data/vaccines-2026";
 import { createId } from "../domain/id";
 import {
   getBrowserSpeechAvailability,
@@ -255,7 +256,8 @@ function draftExtras(draft: VoiceDraft): string {
     !draft.leftMinutes &&
     !draft.rightMinutes &&
     draft.temperatureC === undefined &&
-    !draft.medicineName
+    !draft.medicineName &&
+    !draft.vaccineName
   )
     return "";
   return describeCare({
@@ -273,6 +275,8 @@ function draftExtras(draft: VoiceDraft): string {
     site: draft.site,
     medicineName: draft.medicineName,
     dose: draft.dose,
+    vaccineCode: draft.vaccineCode,
+    vaccineName: draft.vaccineName,
   });
 }
 
@@ -297,6 +301,17 @@ function changeKind(index: number, value: CareKind) {
     site: undefined,
     medicineName: undefined,
     dose: undefined,
+    vaccineCode: undefined,
+    vaccineName: undefined,
+  });
+}
+
+function pickVaccine(index: number, code: string) {
+  const spec = VACCINES_2026.find((item) => item.code === code);
+  updateDraft(index, {
+    vaccineCode: spec?.code,
+    vaccineName: spec?.name,
+    title: spec ? "接种记录" : "日常备注",
   });
 }
 
@@ -644,6 +659,24 @@ onBeforeUnmount(() => {
             <option value="">未选择</option>
             <option v-for="(label, site) in SITE_LABELS" :key="site" :value="site">
               {{ label }}
+            </option>
+          </select></label
+        >
+        <label v-if="draft.kind === 'vaccination'" class="field"
+          ><span>疫苗 <small>对应免疫程序</small></span
+          ><select
+            :value="draft.vaccineCode ?? ''"
+            @change="
+              pickVaccine(index, ($event.target as HTMLSelectElement).value)
+            "
+          >
+            <option value="">请选择</option>
+            <option
+              v-for="spec in VACCINES_2026"
+              :key="spec.code"
+              :value="spec.code"
+            >
+              {{ spec.name }}
             </option>
           </select></label
         >

@@ -1,6 +1,6 @@
 import type { CareObservation } from "./domain/care-types";
 
-export type Tab = "time" | "inbox" | "recap" | "family";
+export type Tab = "time" | "health" | "inbox" | "recap" | "family";
 export type MediaTheme = "sand" | "sage" | "rose";
 
 export interface BabyProfile {
@@ -78,6 +78,30 @@ export interface Recap extends RecapDraft {
   createdAt: string;
 }
 
+export interface VaccinationRecord {
+  id: string;
+  /** 程序内缩写；自费疫苗用 "custom"。 */
+  code: string;
+  /** 自费疫苗名称，程序内疫苗留空。 */
+  name?: string;
+  /** 第几剂。 */
+  dose: number;
+  /** 接种日期，YYYY-MM-DD。 */
+  date: string;
+  clinic?: string;
+  lot?: string;
+  createdAt: string;
+  /** 语音批次去重用。 */
+  inputId?: string;
+}
+
+export interface VaccinePlan {
+  /** 乙肝特殊程序：母亲 HBsAg 阳性且出生体重 <2000g。 */
+  specialProgram: boolean;
+  /** 乙脑、甲肝二选一。 */
+  choices: { je?: "JE-L" | "JE-I"; hepa?: "HepA-L" | "HepA-I" };
+}
+
 export interface Workspace {
   schemaVersion: 1;
   baby: BabyProfile;
@@ -86,6 +110,9 @@ export interface Workspace {
   candidates: Candidate[];
   entries: GrowthEntry[];
   recaps: Recap[];
+  /** 接种记录；旧备份没有这个字段，读取时补空数组。 */
+  vaccinations?: VaccinationRecord[];
+  vaccinePlan?: VaccinePlan;
 }
 
 export interface FamilyStats {
@@ -106,4 +133,5 @@ export const ENTRY_TAGS = [
   "日常备注",
   "体温",
   "用药",
+  "接种",
 ];

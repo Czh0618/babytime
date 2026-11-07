@@ -26,6 +26,7 @@ export function validateEntry(
         "note",
         "temperature",
         "medicine",
+        "vaccination",
       ].includes(draft.care.kind)
     )
       return "请选择有效的照护类型。";

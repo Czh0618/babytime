@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import {
   Clapperboard,
   HardDrive,
+  HeartPulse,
   House,
   LockKeyhole,
   NotebookPen,
@@ -14,6 +15,7 @@ import TimeView from "./views/TimeView.vue";
 import InboxView from "./views/InboxView.vue";
 import RecapView from "./views/RecapView.vue";
 import FamilyView from "./views/FamilyView.vue";
+import HealthView from "./views/HealthView.vue";
 import ImportDialog from "./components/ImportDialog.vue";
 import EntryEditor from "./components/EntryEditor.vue";
 import EntryDetail from "./components/EntryDetail.vue";
@@ -65,6 +67,9 @@ import {
   parseAICaption,
 } from "./domain/ai";
 import { shouldRemindBackup } from "./domain/backup-reminder";
+import { defaultVaccinePlan, type VaccineTask } from "./domain/vaccines";
+import { buildVaccineIcs, icsFileName } from "./lib/ics";
+import { downloadBlob } from "./lib/export";
 import { isNightTime } from "./domain/night";
 import { exportRecap, exportRecords } from "./lib/export";
 import type { PreparedMedia } from "./lib/media";
@@ -76,6 +81,8 @@ import type {
   Recap,
   RecapDraft,
   Tab,
+  VaccinationRecord,
+  VaccinePlan,
 } from "./types";
 
 type Overlay =
@@ -113,6 +120,7 @@ const {
 } = model;
 const tabs = [
   { id: "time", name: "今天", icon: NotebookPen },
+  { id: "health", name: "健康", icon: HeartPulse },
   { id: "inbox", name: "待整理", icon: Sparkles },
   { id: "recap", name: "回顾", icon: Clapperboard },
   { id: "family", name: "家庭", icon: House },
@@ -484,6 +492,20 @@ async function downloadBackup() {
   if (ok) markBackupDone();
 }
 
+function downloadVaccineEvent(task: VaccineTask) {
+  const event = {
+    code: task.code,
+    name: task.name,
+    dose: task.dose,
+    dueDate: task.dueDate,
+  };
+  downloadBlob(
+    new Blob([buildVaccineIcs(event)], { type: "text/calendar;charset=utf-8" }),
+    icsFileName(event),
+  );
+  say("已生成日历文件，导入后会提前一天提醒。");
+}
+
 function askDeleteRecap(id: string) {
   overlay.value = {
     kind: "confirm",
@@ -491,6 +513,18 @@ function askDeleteRecap(id: string) {
     description: "只删除这份回顾，成长记录和原片会保留。",
     action: () => model.deleteRecap(id),
   };
+}
+
+function saveVaccinePlan(plan: VaccinePlan) {
+  void perform(() => model.saveVaccinePlan(plan));
+}
+
+function addVaccination(record: Omit<VaccinationRecord, "id" | "createdAt">) {
+  void perform(() => model.addVaccination(record), "接种记录已保存。");
+}
+
+function removeVaccination(id: string) {
+  void perform(() => model.removeVaccination(id), "已撤销这剂接种记录。");
 }
 
 async function confirmAction() {
@@ -686,6 +720,17 @@ onBeforeUnmount(() => {
               )
           "
           @remove="askDeleteRecap"
+        />
+        <HealthView
+          v-else-if="tab === 'health'"
+          :baby="workspace.baby"
+          :plan="workspace.vaccinePlan ?? defaultVaccinePlan()"
+          :records="workspace.vaccinations ?? []"
+          :busy="busy"
+          @save-plan="saveVaccinePlan"
+          @add-record="addVaccination"
+          @remove-record="removeVaccination"
+          @calendar="downloadVaccineEvent"
         />
         <FamilyView
           v-else

@@ -6,6 +6,7 @@ import MediaTile from "./MediaTile.vue";
 import { localDateTime } from "../domain/date";
 import { validateEntry } from "../domain/records";
 import { CARE_LABELS, SITE_LABELS, careFromTag, type CareKind } from "../domain/care-types";
+import { VACCINES_2026 } from "../data/vaccines-2026";
 import { prepareMediaFile, type PreparedMedia } from "../lib/media";
 import {
   ENTRY_TAGS,
@@ -169,6 +170,12 @@ function updateCareKind(event: Event) {
 function numberInput(event: Event) {
   const value = (event.target as HTMLInputElement).value;
   return value === "" ? undefined : Number(value);
+}
+function pickVaccine(code: string) {
+  if (!draft.care) return;
+  const spec = VACCINES_2026.find((item) => item.code === code);
+  draft.care.vaccineCode = spec?.code;
+  draft.care.vaccineName = spec?.name;
 }
 function boundPlayback() {
   const player = video.value;
@@ -381,6 +388,24 @@ function startPlayback() {
                 ($event.target as HTMLInputElement).value || undefined
             "
         /></label>
+        <label v-if="draft.care.kind === 'vaccination'" class="field"
+          ><span>疫苗</span
+          ><select
+            :value="draft.care.vaccineCode ?? ''"
+            @change="
+              pickVaccine(($event.target as HTMLSelectElement).value)
+            "
+          >
+            <option value="">请选择</option>
+            <option
+              v-for="spec in VACCINES_2026"
+              :key="spec.code"
+              :value="spec.code"
+            >
+              {{ spec.name }}
+            </option>
+          </select></label
+        >
       </div>
       <div
         v-if="currentMedia?.kind === 'video' && currentMedia.duration"
