@@ -6,6 +6,10 @@ export type MediaTheme = "sand" | "sage" | "rose";
 export interface BabyProfile {
   name: string;
   birthDate: string;
+  /** 可选：生长曲线与疫苗（HPV）需要。旧数据没有也能正常使用。 */
+  sex?: "male" | "female";
+  /** 可选：预产期，用于早产矫正月龄。 */
+  dueDate?: string;
 }
 
 export interface DemoProfileRestorePoint {

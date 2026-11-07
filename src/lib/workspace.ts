@@ -33,6 +33,7 @@ import {
 } from "./storage";
 import { inspectMedia, validateMediaFile, type PreparedMedia } from "./media";
 import { isWorkspace } from "../domain/workspace-schema";
+import { validateProfile } from "../domain/profile";
 import { decodeBackup } from "./backup";
 import { addVoiceEntries } from "../domain/care-records";
 import type { VoiceDraft } from "../domain/care-types";
@@ -366,12 +367,18 @@ export function useWorkspace() {
   }
 
   async function saveProfile(baby: BabyProfile) {
-    const today = localDateTime().slice(0, 10);
-    if (!baby.name.trim() || !baby.birthDate || baby.birthDate > today)
-      throw new Error("请填写宝宝昵称，以及不晚于今天的有效生日。");
+    const error = validateProfile(baby);
+    if (error) throw new Error(error);
     await update((next) => {
       delete next.demoProfileRestorePoint;
-      next.baby = { ...baby, name: baby.name.trim() };
+      next.baby = {
+        ...baby,
+        name: baby.name.trim(),
+        ...(baby.sex ? { sex: baby.sex } : {}),
+        ...(baby.dueDate ? { dueDate: baby.dueDate } : {}),
+      };
+      if (!next.baby.sex) delete next.baby.sex;
+      if (!next.baby.dueDate) delete next.baby.dueDate;
     });
   }
 

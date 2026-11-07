@@ -22,7 +22,12 @@ function isBabyProfile(value: unknown): value is BabyProfile {
   if (!value || typeof value !== "object") return false;
   const profile = value as Record<string, unknown>;
   return (
-    typeof profile.name === "string" && typeof profile.birthDate === "string"
+    typeof profile.name === "string" &&
+    typeof profile.birthDate === "string" &&
+    (profile.sex === undefined ||
+      profile.sex === "male" ||
+      profile.sex === "female") &&
+    (profile.dueDate === undefined || typeof profile.dueDate === "string")
   );
 }
 

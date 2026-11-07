@@ -16,6 +16,7 @@ import {
   UserRound,
 } from "@lucide/vue";
 import { dayAge, localDate } from "../domain/date";
+import { validateProfile } from "../domain/profile";
 import { aiStatus } from "../lib/ai-service";
 import { describePersistence, persistenceStatus } from "../lib/persistence";
 import { isIOS, isStandalone, migrationCopy } from "../domain/pwa";
@@ -42,7 +43,9 @@ const emit = defineEmits<{
   openAiSettings: [];
 }>();
 
-const draft = reactive<BabyProfile>({ ...props.baby });
+const draft = reactive<BabyProfile & { sex?: "male" | "female" | ""; dueDate?: string }>(
+  { ...props.baby },
+);
 const notice = reactive({ text: "", kind: "success" as "success" | "error" });
 const today = localDate();
 const migration = migrationCopy({
@@ -96,22 +99,20 @@ function changeTheme(event: Event) {
 
 function saveProfile() {
   notice.text = "";
-  if (!draft.name.trim()) {
+  const profile = {
+    ...draft,
+    name: draft.name.trim(),
+    sex: draft.sex || undefined,
+    dueDate: draft.dueDate || undefined,
+  };
+  const error = validateProfile(profile, today);
+  if (error) {
     notice.kind = "error";
-    notice.text = "请先填写宝宝昵称。";
+    notice.text = error;
     return;
   }
-  if (!draft.birthDate) {
-    notice.kind = "error";
-    notice.text = "请先填写宝宝生日。";
-    return;
-  }
-  if (draft.birthDate > today) {
-    notice.kind = "error";
-    notice.text = "生日不能晚于今天。";
-    return;
-  }
-  emit("save", { name: draft.name.trim(), birthDate: draft.birthDate });
+  notice.kind = "success";
+  emit("save", profile);
 }
 
 function exportData() {
@@ -178,6 +179,25 @@ function clearData() {
             type="date"
             :max="today"
             required
+        /></label>
+        <label class="field"
+          ><span>性别 <small>可选 · 用于生长曲线</small></span
+          ><select
+            class="input"
+            :value="draft.sex ?? ''"
+            @change="
+              draft.sex = (($event.target as HTMLSelectElement).value ||
+                undefined) as 'male' | 'female' | undefined
+            "
+          >
+            <option value="">暂不填写</option>
+            <option value="male">男孩</option>
+            <option value="female">女孩</option>
+          </select></label
+        >
+        <label class="field"
+          ><span>预产期 <small>可选 · 早产时用于矫正月龄</small></span
+          ><input v-model="draft.dueDate" class="input" type="date"
         /></label>
       </div>
       <button
