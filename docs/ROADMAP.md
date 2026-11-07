@@ -71,7 +71,7 @@
   - 新增 `domain/sleep.ts`，把按时间排序的“睡着/醒来”记录配对成睡眠段，**不迁移数据**。
   - 边界处理：只有睡着没有醒来，算“进行中”；连续两条睡着，只取后一条；有 `durationMinutes` 的记录，直接成段。
   - 今日卡片显示当天总睡眠时长和最长一段。跨午夜的睡眠段，按自然日切分统计。
-- [ ] **P1.5 成长趋势图（用户重点）**
+- [x] **P1.5 成长趋势图（用户重点）**
   - 新增 `domain/stats.ts`：按天聚合喂奶次数、奶量、睡眠总时长、尿布次数、湿/脏尿布数。
   - 新增 `components/TrendChart.vue`：手写 SVG 柱状图或折线图，可切换 7 天 / 30 天，缺数据的天显示为空而不是 0。
   - 入口放在回顾页顶部，或今日卡片的“看趋势”。
@@ -274,4 +274,5 @@
 - P0.4（2026-11-06）：新增 `domain/backup-reminder.ts` 的 `shouldRemindBackup` 纯函数（无记录不提醒、7 天阈值、从未备份或时间损坏按需要备份、本次关闭后不再出现、时钟回拨不误报）；导出成功后写 localStorage `babytime.lastBackupAt`，App 启动时恢复并在今天页 `#today` 插槽顶部显示 `BackupReminder` 卡片，可一键导出或关闭。`tests/backup-reminder.test.ts` 5 项覆盖上述边界。96 项测试、类型检查、生产构建通过；未改数据结构，旧备份导入不受影响。遗留：真实 8 天未备份场景与 375/320px 布局待浏览器实测。
 - P1.2 + AI.1 喂养部分（2026-11-06，同一原子变更故合并为一个 commit）：`care-types.ts` 新增 `FeedingMethod` / `BreastSide` 与 7 个全可选字段（feedingMethod / breastSide / leftMinutes / rightMinutes / feedingMinutes / food / reaction）及 `reviewNote`，**三处同步**完成：本机规则 `voice-parser.ts`（kindFor 支持配方奶/辅食/吸奶/亲喂与"睡的/醒的"、splitClauses 合并亲喂左右、`parseFeedingFields`、`voiceDraftToEntry` 只在有值时写入以保持旧记录结构），AI 侧 `ai.ts`（提示词加字段与范围约束，`parseAIVoiceDrafts` 逐字段白名单：枚举、奶量 0–400、分钟 0–600、字符串长度，越界丢弃并给「请核对」提示），以及 `workspace-schema.ts` 的 validCare 扩展。`care-records.ts` 补 `describeCare` 新文案与 `summarizeMilk`（吸出量不计入摄入），今日卡片显示"摄入 X ml · 吸出 Y ml"；语音草稿页显示识别摘要与 reviewNote。ROADMAP 指定 5 句全部解析正确：配方奶 14:00/90ml、喂奶 15 分钟、亲喂左 15 右 10 合并一条、辅食南瓜泥 + 吸奶 120ml 两条、睡着/醒来两条且时间仍需确认。新增 `tests/care-fields.test.ts` 6 项、`tests/ai.test.ts` 3 项、`tests/voice-parser.test.ts` 6 项；111 项测试、类型检查、生产构建通过，旧备份导入测试通过。**遗留**：编辑弹窗暂不提供细分字段编辑（草稿页只读核对）；AI.1 的体温用药 / 接种 / 测量部分随 P2.2–P2.4 再做，因此 AI.1 复选框保持未勾选；375/320px 与真机待浏览器实测。
 - P1.4（2026-11-07）：新增 `domain/sleep.ts`——`deriveSleepSegments` 按时间排序配对睡着/醒来（乱序输入也正确）、只有睡着记为进行中、连续两条睡着只保留后一条、带 `durationMinutes` 直接成段；`splitSegmentByDay` 把跨午夜段按自然日切分，`sleepSummaryForDay` 给当天总时长与最长一段；全程不迁移、不改写记录。今日卡片新增「今日睡眠：共 X · 最长一段 Y」。`tests/sleep.test.ts` 7 项覆盖配对、进行中、连续睡着、时长记录、跨午夜（22:30→06:30 拆成 90 / 390 分钟）、空日与时长文案。118 项测试、类型检查、生产构建通过；旧备份导入不受影响。遗留：375/320px 与真机待浏览器实测。
+- P1.5（2026-11-07）：新增 `domain/stats.ts`（`dateRange` / `aggregateByDay`，按天聚合喂奶次数、摄入与吸出奶量、睡眠分钟、尿布次数及湿/脏计数，睡眠复用 P1.4 的段并按自然日切分，空日 `hasData=false`）；新增 `components/TrendChart.vue`，手写 SVG 柱状图，可切换 7/30 天与奶量/睡眠/尿布三个指标，无记录的日子留空而不画成 0，坐标轴文字用 HTML 标签保证 375px 下可读，入口放在回顾页顶部。`tests/stats.test.ts` 4 项覆盖日期区间、聚合与空日、跨午夜（11-05 22:00→11-06 06:00 拆 120/360 分钟）、范围外记录与指标换算。122 项测试、类型检查、生产构建通过。遗留：375/320px 实际渲染待浏览器实测。
 

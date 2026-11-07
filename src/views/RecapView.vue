@@ -14,6 +14,7 @@ import {
   X,
 } from "@lucide/vue";
 import MediaTile from "../components/MediaTile.vue";
+import TrendChart from "../components/TrendChart.vue";
 import { formatDate, formatTime } from "../domain/date";
 import type { GrowthEntry, MediaAsset, Recap, RecapDraft } from "../types";
 
@@ -175,6 +176,8 @@ function createRecap() {
         <Plus :size="17" aria-hidden="true" /> 新建
       </button>
     </div>
+
+    <TrendChart :entries="props.entries" />
 
     <div v-if="props.error" class="notice error" role="alert">
       {{ props.error }}
