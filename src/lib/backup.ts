@@ -1,10 +1,10 @@
-import type { Workspace } from "../types.ts";
+import type { StoredWorkspace, Workspace } from "../types.ts";
 import { parseBackupContent, type WorkspaceBackup } from "../domain/workspace-schema.ts";
 import { blobToDataUrl, MAX_FILE_BYTES } from "./media.ts";
 import { readMedia, type StoredMedia } from "./storage.ts";
 
 /** 逐个读取原片，避免同时将所有视频载入内存。缺失的原片由调用方明确提示。 */
-export async function createBackup(workspace: Workspace): Promise<WorkspaceBackup> {
+export async function createBackup(workspace: StoredWorkspace): Promise<WorkspaceBackup> {
   const backup = parseBackupContent(JSON.stringify(workspace));
   for (const media of backup.workspace.media) {
     if (media.demo) continue;
@@ -33,7 +33,7 @@ function decodeMedia(dataUrl: string): Blob {
 }
 
 /** 全部解码成功后才能开始持久化，防止损坏的备份覆盖当前记录。 */
-export function decodeBackup(text: string): { workspace: Workspace; mediaFiles: StoredMedia[] } {
+export function decodeBackup(text: string): { workspace: StoredWorkspace; mediaFiles: StoredMedia[] } {
   const backup = parseBackupContent(text);
   const mediaFiles = backup.mediaFiles.map((item) => {
     const media = backup.workspace.media.find((asset) => asset.id === item.id)!;

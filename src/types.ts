@@ -4,12 +4,17 @@ export type Tab = "time" | "health" | "inbox" | "recap" | "family";
 export type MediaTheme = "sand" | "sage" | "rose";
 
 export interface BabyProfile {
+  /** 稳定标识（P5）；旧数据迁移时补上。 */
+  id?: string;
   name: string;
   birthDate: string;
   /** 可选：生长曲线与疫苗（HPV）需要。旧数据没有也能正常使用。 */
   sex?: "male" | "female";
   /** 可选：预产期，用于早产矫正月龄。 */
   dueDate?: string;
+  /** 这个宝宝自己的疫苗计划与里程碑（P5，旧数据迁移时从顶层搬进来）。 */
+  vaccinePlan?: VaccinePlan;
+  milestones?: Record<string, string>;
 }
 
 export interface DemoProfileRestorePoint {
@@ -38,6 +43,8 @@ export interface Tombstone {
 
 export interface MediaAsset extends SyncMeta {
   id: string;
+  /** 归属的宝宝（P5）。 */
+  babyId?: string;
   kind: "image" | "video";
   name: string;
   mime: string;
@@ -54,6 +61,7 @@ export interface MediaAsset extends SyncMeta {
 
 export interface Candidate {
   id: string;
+  babyId?: string;
   mediaId: string;
   title: string;
   suggestion?: string;
@@ -79,6 +87,7 @@ export interface EntryDraft {
 
 export interface GrowthEntry extends EntryDraft, SyncMeta {
   id: string;
+  babyId?: string;
   mediaId?: string;
   candidateId?: string;
   favorite: boolean;
@@ -94,11 +103,13 @@ export interface RecapDraft {
 
 export interface Recap extends RecapDraft, SyncMeta {
   id: string;
+  babyId?: string;
   createdAt: string;
 }
 
 export interface VaccinationRecord extends SyncMeta {
   id: string;
+  babyId?: string;
   /** 程序内缩写；自费疫苗用 "custom"。 */
   code: string;
   /** 自费疫苗名称，程序内疫苗留空。 */
@@ -123,7 +134,9 @@ export interface VaccinePlan {
 
 export interface Workspace {
   schemaVersion: 1;
-  baby: BabyProfile;
+  /** P5：至少一个宝宝；旧数据由 migrateProfiles 归一。 */
+  profiles: BabyProfile[];
+  activeProfileId: string;
   demoProfileRestorePoint?: DemoProfileRestorePoint;
   media: MediaAsset[];
   candidates: Candidate[];
@@ -131,17 +144,33 @@ export interface Workspace {
   recaps: Recap[];
   /** 接种记录；旧备份没有这个字段，读取时补空数组。 */
   vaccinations?: VaccinationRecord[];
-  vaccinePlan?: VaccinePlan;
-  /** 里程碑打勾：键 `guideId:index` → 达成日期。 */
-  milestones?: Record<string, string>;
-  /** 同步用：宝宝资料与疫苗计划各自的最后修改时间，缺失表示迁移后未改过。 */
-  babyUpdatedAt?: string;
-  vaccinePlanUpdatedAt?: string;
+  /** 同步用：宝宝档案（含各自的计划与里程碑）的最后修改时间。 */
+  profilesUpdatedAt?: string;
   /** 同步用：已删除条目的墓碑。 */
   tombstones?: Tombstone[];
   /** 同步用：本机改过、还没推送的键（`entry:<id>`、`milestone:<key>`、`baby` 等）。 */
   syncDirty?: string[];
 }
+
+/** 旧结构（P4 及以前），只在读取旧数据、旧备份与迁移时出现。 */
+export interface LegacyWorkspace {
+  schemaVersion: 1;
+  baby: BabyProfile;
+  demoProfileRestorePoint?: DemoProfileRestorePoint;
+  media: MediaAsset[];
+  candidates: Candidate[];
+  entries: GrowthEntry[];
+  recaps: Recap[];
+  vaccinations?: VaccinationRecord[];
+  vaccinePlan?: VaccinePlan;
+  milestones?: Record<string, string>;
+  babyUpdatedAt?: string;
+  vaccinePlanUpdatedAt?: string;
+  tombstones?: Tombstone[];
+  syncDirty?: string[];
+}
+
+export type StoredWorkspace = Workspace | LegacyWorkspace;
 
 export interface FamilyStats {
   media: number;

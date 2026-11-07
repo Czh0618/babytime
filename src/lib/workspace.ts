@@ -41,6 +41,7 @@ import { addVoiceEntries } from "../domain/care-records";
 import type { VoiceDraft } from "../domain/care-types";
 import type { AICaption } from "../domain/ai";
 import { migrateSyncMeta, stampChanges } from "../domain/sync-meta";
+import { activeProfileOf, migrateProfiles } from "../domain/profiles";
 import { runSync, type SyncOutcome } from "../domain/sync";
 import {
   clearSyncConfig,
@@ -69,14 +70,13 @@ function deviceId(): string {
   return cachedDeviceId;
 }
 
-/** 旧数据没有疫苗字段；读入时补默认值，界面就不用到处判空。 */
-function normalizeVaccines(target: Workspace) {
+/** 新记录一律归到当前宝宝；旧数据在 migrateProfiles 里已经补齐。 */
+function tagActiveBaby(target: Workspace) {
   if (!Array.isArray(target.vaccinations)) target.vaccinations = [];
-  const plan = target.vaccinePlan;
-  if (!plan || typeof plan !== "object" || !plan.choices)
-    target.vaccinePlan = defaultVaccinePlan();
-  if (!target.milestones || typeof target.milestones !== "object")
-    target.milestones = {};
+  const id = target.activeProfileId;
+  for (const key of ["media", "candidates", "entries", "recaps", "vaccinations"] as const)
+    for (const item of target[key] ?? [])
+      if (!item.babyId) item.babyId = id;
 }
 
 export function useWorkspace() {
@@ -87,19 +87,33 @@ export function useWorkspace() {
   const importProgress = ref("");
   let writes = Promise.resolve();
 
+  const profiles = computed(() => workspace.value.profiles);
+  const activeProfile = computed(() => activeProfileOf(workspace.value));
+  const activeId = computed(() => activeProfile.value.id);
+  /** 只显示当前宝宝的条目；迁移前的旧条目没有 babyId，视为唯一宝宝的。 */
+  function forActive<T extends { babyId?: string }>(items: T[]): T[] {
+    return items.filter((item) => !item.babyId || item.babyId === activeId.value);
+  }
+  const entries = computed(() => forActive(workspace.value.entries));
+  const media = computed(() => forActive(workspace.value.media));
+  const recaps = computed(() => forActive(workspace.value.recaps));
+  const vaccinations = computed(() => forActive(workspace.value.vaccinations ?? []));
+  const milestones = computed(() => activeProfile.value.milestones ?? {});
+  const vaccinePlan = computed(() => activeProfile.value.vaccinePlan ?? defaultVaccinePlan());
+
   const pending = computed(() =>
-    workspace.value.candidates.filter((item) => item.status === "pending"),
+    forActive(workspace.value.candidates).filter((item) => item.status === "pending"),
   );
   const hasDemo = computed(
     () =>
-      workspace.value.media.some((item) => item.demo) ||
-      workspace.value.entries.some((item) => item.demo),
+      media.value.some((item) => item.demo) ||
+      entries.value.some((item) => item.demo),
   );
   const stats = computed(() => ({
-    media: workspace.value.media.length,
-    entries: workspace.value.entries.length,
-    recaps: workspace.value.recaps.length,
-    bytes: workspace.value.media.reduce((sum, media) => sum + media.size, 0),
+    media: media.value.length,
+    entries: entries.value.length,
+    recaps: recaps.value.length,
+    bytes: media.value.reduce((sum, item) => sum + item.size, 0),
   }));
 
   function releaseUrls(media: MediaAsset[]) {
@@ -131,8 +145,7 @@ export function useWorkspace() {
       if (saved) {
         if (!isWorkspace(saved))
           throw new Error("本机数据格式暂不支持，原有内容未被修改。");
-        workspace.value = saved;
-        normalizeVaccines(workspace.value);
+        workspace.value = migrateProfiles(saved, createId);
         migrateSyncMeta(workspace.value, deviceId());
       } else await writeWorkspace(workspace.value); // 首次进入为空白工作区，示例由用户主动加载
       await attachMedia(workspace.value);
@@ -148,8 +161,8 @@ export function useWorkspace() {
 
   /** 用备份覆盖当前工作区；返回原片不在本机的素材数量。 */
   async function restore(file: File) {
-    const { workspace: next, mediaFiles } = decodeBackup(await file.text());
-    normalizeVaccines(next);
+    const { workspace: decoded, mediaFiles } = decodeBackup(await file.text());
+    const next = migrateProfiles(decoded, createId);
     migrateSyncMeta(next, deviceId());
     const action = writes
       .catch(() => {})
@@ -182,6 +195,7 @@ export function useWorkspace() {
         if (storageError.value) throw new Error(storageError.value);
         const next: Workspace = JSON.parse(JSON.stringify(workspace.value));
         change(next);
+        tagActiveBaby(next);
         stampChanges(workspace.value, next, deviceId());
         await writeWorkspaceAndMedia(next, mediaFiles);
         workspace.value = next;
@@ -420,12 +434,14 @@ export function useWorkspace() {
   ): Promise<string> {
     const id = createId();
     await update((next) => {
-      normalizeVaccines(next);
       const list = next.vaccinations!;
       if (
         record.code !== "custom" &&
         list.some(
-          (item) => item.code === record.code && item.dose === record.dose,
+          (item) =>
+            item.babyId === next.activeProfileId &&
+            item.code === record.code &&
+            item.dose === record.dose,
         )
       )
         throw new Error("这一剂已经记过了。");
@@ -436,14 +452,15 @@ export function useWorkspace() {
 
   async function removeVaccination(id: string) {
     await update((next) => {
-      normalizeVaccines(next);
       next.vaccinations = next.vaccinations!.filter((item) => item.id !== id);
     });
   }
 
   async function saveVaccinePlan(plan: VaccinePlan) {
     await update((next) => {
-      next.vaccinePlan = {
+      const profile = next.profiles.find((item) => item.id === next.activeProfileId);
+      if (!profile) throw new Error("当前宝宝档案不在了，请刷新后再试。");
+      profile.vaccinePlan = {
         specialProgram: Boolean(plan.specialProgram),
         choices: { ...plan.choices },
       };
@@ -452,23 +469,78 @@ export function useWorkspace() {
 
   async function saveMilestones(milestones: Record<string, string>) {
     await update((next) => {
-      next.milestones = { ...milestones };
+      const profile = next.profiles.find((item) => item.id === next.activeProfileId);
+      if (!profile) throw new Error("当前宝宝档案不在了，请刷新后再试。");
+      profile.milestones = { ...milestones };
     });
+  }
+
+  function cleanProfile(baby: BabyProfile): BabyProfile {
+    return {
+      ...baby,
+      name: baby.name.trim(),
+      ...(baby.sex ? { sex: baby.sex } : {}),
+      ...(baby.dueDate ? { dueDate: baby.dueDate } : {}),
+    };
   }
 
   async function saveProfile(baby: BabyProfile) {
     const error = validateProfile(baby);
     if (error) throw new Error(error);
+    const saved = cleanProfile(baby);
+    if (!saved.sex) delete saved.sex;
+    if (!saved.dueDate) delete saved.dueDate;
     await update((next) => {
       delete next.demoProfileRestorePoint;
-      next.baby = {
-        ...baby,
-        name: baby.name.trim(),
-        ...(baby.sex ? { sex: baby.sex } : {}),
-        ...(baby.dueDate ? { dueDate: baby.dueDate } : {}),
+      const index = next.profiles.findIndex((item) => item.id === next.activeProfileId);
+      if (index < 0) throw new Error("当前宝宝档案不在了，请刷新后再试。");
+      next.profiles[index] = {
+        ...next.profiles[index]!,
+        ...saved,
+        id: next.profiles[index]!.id,
       };
-      if (!next.baby.sex) delete next.baby.sex;
-      if (!next.baby.dueDate) delete next.baby.dueDate;
+    });
+  }
+
+  /** 新宝宝从空白开始；保存后自动切过去。 */
+  async function addProfile(baby: BabyProfile): Promise<string> {
+    const error = validateProfile(baby);
+    if (error) throw new Error(error);
+    const id = createId();
+    const saved = cleanProfile(baby);
+    await update((next) => {
+      next.profiles.push({
+        ...saved,
+        id,
+        vaccinePlan: defaultVaccinePlan(),
+        milestones: {},
+      });
+      next.activeProfileId = id;
+    });
+    return id;
+  }
+
+  /** 切换只看本机，不进同步。 */
+  async function switchProfile(id: string) {
+    if (!workspace.value.profiles.some((profile) => profile.id === id)) return;
+    await update((next) => {
+      next.activeProfileId = id;
+    });
+  }
+
+  /** 删除宝宝：它的记录一并移出本机并写墓碑，家人设备同步后同样看不到。 */
+  async function deleteProfile(id: string) {
+    await update((next) => {
+      if (next.profiles.length <= 1) throw new Error("至少要保留一个宝宝档案。");
+      next.profiles = next.profiles.filter((profile) => profile.id !== id);
+      if (next.activeProfileId === id)
+        next.activeProfileId = next.profiles[0]!.id ?? next.activeProfileId;
+      const gone = (item: { babyId?: string }) => item.babyId !== id;
+      next.entries = next.entries.filter(gone);
+      next.recaps = next.recaps.filter(gone);
+      next.media = next.media.filter(gone);
+      next.candidates = next.candidates.filter(gone);
+      next.vaccinations = (next.vaccinations ?? []).filter(gone);
     });
   }
 
@@ -585,5 +657,16 @@ export function useWorkspace() {
     reset,
     restore,
     syncNow,
+    profiles,
+    activeProfile,
+    entries,
+    media,
+    recaps,
+    vaccinations,
+    milestones,
+    vaccinePlan,
+    addProfile,
+    switchProfile,
+    deleteProfile,
   };
 }

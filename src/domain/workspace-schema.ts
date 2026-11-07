@@ -1,4 +1,4 @@
-import type { BabyProfile, Workspace } from "../types";
+import type { BabyProfile, StoredWorkspace, Workspace } from "../types";
 
 export interface BackupMediaFile {
   id: string;
@@ -8,7 +8,7 @@ export interface BackupMediaFile {
 
 export interface WorkspaceBackup {
   backupVersion: 1;
-  workspace: Workspace;
+  workspace: StoredWorkspace;
   mediaFiles: BackupMediaFile[];
 }
 
@@ -22,6 +22,7 @@ function isBabyProfile(value: unknown): value is BabyProfile {
   if (!value || typeof value !== "object") return false;
   const profile = value as Record<string, unknown>;
   return (
+    (profile.id === undefined || typeof profile.id === "string") &&
     typeof profile.name === "string" &&
     typeof profile.birthDate === "string" &&
     (profile.sex === undefined ||
@@ -41,13 +42,17 @@ function isDemoProfileRestorePoint(value: unknown): boolean {
   );
 }
 
-/** 浅层结构校验：本机读取与备份恢复共用，只拦截明显不兼容的数据。 */
-export function isWorkspace(value: unknown): value is Workspace {
+/** 浅层结构校验：本机读取与备份恢复共用，只拦截明显不兼容的数据。新旧两种结构都接受。 */
+export function isWorkspace(value: unknown): value is StoredWorkspace {
   if (!value || typeof value !== "object") return false;
   const data = value as Record<string, unknown>;
+  const profiles =
+    Array.isArray(data.profiles) &&
+    data.profiles.every(isBabyProfile) &&
+    typeof data.activeProfileId === "string";
   return (
     data.schemaVersion === 1 &&
-    isBabyProfile(data.baby) &&
+    (profiles || isBabyProfile(data.baby)) &&
     isDemoProfileRestorePoint(data.demoProfileRestorePoint) &&
     hasIds(data.media) &&
     hasIds(data.entries) &&
@@ -120,8 +125,8 @@ function validCare(value: unknown): boolean {
 }
 
 /** 同步元信息（P4.2）对所有按条同步的列表都是可选的。 */
-const validSyncMeta = (item: { updatedAt?: unknown; deviceId?: unknown }) =>
-  optionalString(item.updatedAt) && optionalString(item.deviceId);
+const validSyncMeta = (item: { updatedAt?: unknown; deviceId?: unknown; babyId?: unknown }) =>
+  optionalString(item.updatedAt) && optionalString(item.deviceId) && optionalString(item.babyId);
 
 function validTombstones(value: unknown): boolean {
   if (value === undefined) return true;
@@ -166,8 +171,21 @@ function validVaccinePlan(value: unknown): boolean {
 }
 
 /** 导入来自外部文件的数据前，检查界面和编辑流程直接使用的字段。 */
-function validBackupWorkspace(workspace: Workspace): boolean {
+function validBackupWorkspace(workspace: StoredWorkspace): boolean {
+  const data = workspace as Workspace & Partial<Workspace & { baby?: BabyProfile; vaccinePlan?: unknown; milestones?: unknown; babyUpdatedAt?: string; vaccinePlanUpdatedAt?: string }>;
+  const profilesOk = Array.isArray(data.profiles)
+    ? data.profiles.length > 0 &&
+      data.profiles.every((item) => isBabyProfile(item) &&
+        optionalString(item.id) &&
+        (item.vaccinePlan === undefined || validVaccinePlan(item.vaccinePlan)) &&
+        (item.milestones === undefined || validMilestones(item.milestones))) &&
+      data.profiles.some((item) => item.id === data.activeProfileId)
+    : isBabyProfile((data as LegacyLike).baby);
   return (
+    profilesOk &&
+    optionalString(data.profilesUpdatedAt) &&
+    optionalString((data as LegacyLike).babyUpdatedAt) &&
+    optionalString((data as LegacyLike).vaccinePlanUpdatedAt) &&
     validItems(workspace.media, (item) =>
       ["image", "video"].includes(item.kind) &&
       typeof item.name === "string" && typeof item.mime === "string" &&
@@ -201,19 +219,31 @@ function validBackupWorkspace(workspace: Workspace): boolean {
         typeof item.createdAt === "string" &&
         optionalString(item.name) && optionalString(item.clinic) &&
         optionalString(item.lot) && optionalString(item.inputId))) &&
-    (workspace.vaccinePlan === undefined || validVaccinePlan(workspace.vaccinePlan)) &&
-    optionalString(workspace.babyUpdatedAt) &&
-    optionalString(workspace.vaccinePlanUpdatedAt) &&
+    ((data as LegacyLike).vaccinePlan === undefined || validVaccinePlan((data as LegacyLike).vaccinePlan)) &&
     validTombstones(workspace.tombstones) &&
     (workspace.syncDirty === undefined ||
       (Array.isArray(workspace.syncDirty) &&
         workspace.syncDirty.every((key) => typeof key === "string"))) &&
-    (workspace.milestones === undefined ||
-      (typeof workspace.milestones === "object" &&
-        !Array.isArray(workspace.milestones) &&
-        Object.values(workspace.milestones).every(
-          (value) => typeof value === "string",
-        )))
+    ((data as LegacyLike).milestones === undefined || validMilestones((data as LegacyLike).milestones))
+  );
+}
+
+/** 旧结构的顶层字段只在迁移前存在，校验时按可选处理。 */
+interface LegacyLike {
+  baby?: BabyProfile;
+  vaccinePlan?: unknown;
+  milestones?: unknown;
+  babyUpdatedAt?: string;
+  vaccinePlanUpdatedAt?: string;
+}
+
+function validMilestones(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.values(value as Record<string, unknown>).every(
+      (item) => typeof item === "string",
+    )
   );
 }
 
@@ -224,7 +254,7 @@ export function parseBackupContent(text: string): WorkspaceBackup {
   } catch {
     throw new Error("这不是有效的备份文件，请选择导出的成长记录 JSON。");
   }
-  let workspace: Workspace;
+  let workspace: StoredWorkspace;
   let mediaFiles: BackupMediaFile[] = [];
   if (isWorkspace(data)) workspace = data;
   else if (
@@ -253,6 +283,6 @@ export function parseBackupContent(text: string): WorkspaceBackup {
   return { backupVersion: 1, workspace, mediaFiles };
 }
 
-export function parseBackup(text: string): Workspace {
+export function parseBackup(text: string): StoredWorkspace {
   return parseBackupContent(text).workspace;
 }

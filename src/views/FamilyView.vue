@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import {
   CloudUpload,
   Download,
@@ -29,6 +29,7 @@ import type { BabyProfile, FamilyStats } from "../types";
 const props = withDefaults(
   defineProps<{
     baby: BabyProfile;
+    profiles: BabyProfile[];
     stats: FamilyStats;
     hasDemo: boolean;
     busy?: boolean;
@@ -38,8 +39,11 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   save: [baby: BabyProfile];
+  addProfile: [baby: BabyProfile];
+  removeProfile: [id: string];
   clearDemo: [];
   exportData: [];
+  exportLegacy: [];
   restoreData: [file: File];
   clearData: [];
   openAiSettings: [];
@@ -50,6 +54,8 @@ const emit = defineEmits<{
 const draft = reactive<BabyProfile & { sex?: "male" | "female" | ""; dueDate?: string }>(
   { ...props.baby },
 );
+/** 正在填写一个新宝宝档案；保存后切换到它。 */
+const creating = ref(false);
 const notice = reactive({ text: "", kind: "success" as "success" | "error" });
 const today = localDate();
 const migration = migrationCopy({
@@ -59,7 +65,9 @@ const migration = migrationCopy({
 
 watch(
   () => props.baby,
-  (value) => Object.assign(draft, value),
+  (value) => {
+    if (!creating.value) Object.assign(draft, value);
+  },
   { deep: true },
 );
 const ageLabel = computed(() =>
@@ -131,11 +139,38 @@ function saveProfile() {
     return;
   }
   notice.kind = "success";
+  if (creating.value) {
+    emit("addProfile", profile);
+    creating.value = false;
+    return;
+  }
   emit("save", profile);
+}
+
+function startCreate() {
+  creating.value = true;
+  notice.text = "";
+  Object.assign(draft, {
+    name: "", birthDate: "", sex: "" as const, dueDate: "",
+  });
+}
+
+function cancelCreate() {
+  creating.value = false;
+  notice.text = "";
+  Object.assign(draft, props.baby);
+}
+
+function removeProfile() {
+  emit("removeProfile", props.baby.id ?? "");
 }
 
 function exportData() {
   emit("exportData");
+}
+
+function exportLegacy() {
+  emit("exportLegacy");
 }
 
 function restoreData(event: Event) {
@@ -177,8 +212,13 @@ function clearData() {
         <div class="avatar"><UserRound :size="22" aria-hidden="true" /></div>
         <div>
           <p class="eyebrow">BABY PROFILE</p>
-          <h2 class="section-heading">{{ baby.name || "宝宝资料" }}</h2>
-          <p class="muted">{{ ageLabel }}</p>
+          <h2 class="section-heading">
+            {{ creating ? "添加宝宝" : baby.name || "宝宝资料" }}
+          </h2>
+          <p class="muted">
+            {{ creating ? "新宝宝从空白档案开始" : ageLabel }} · 本机共
+            {{ profiles.length }} 个宝宝档案
+          </p>
         </div>
       </div>
       <div class="form-grid">
@@ -219,13 +259,42 @@ function clearData() {
           ><input v-model="draft.dueDate" class="input" type="date"
         /></label>
       </div>
-      <button
-        class="button button-primary"
-        type="submit"
-        :disabled="!valid || busy"
-      >
-        <Save :size="17" aria-hidden="true" />保存资料
-      </button>
+      <div class="profile-actions">
+        <button
+          class="button button-primary"
+          type="submit"
+          :disabled="!valid || busy"
+        >
+          <Save :size="17" aria-hidden="true" />{{ creating ? "保存并切到这个宝宝" : "保存资料" }}
+        </button>
+        <button
+          v-if="creating"
+          class="button button-ghost"
+          type="button"
+          :disabled="busy"
+          @click="cancelCreate"
+        >
+          取消添加
+        </button>
+        <button
+          v-else
+          class="button button-secondary"
+          type="button"
+          :disabled="busy"
+          @click="startCreate"
+        >
+          <UserRound :size="17" aria-hidden="true" />添加宝宝
+        </button>
+        <button
+          v-if="!creating && profiles.length > 1"
+          class="button button-secondary danger"
+          type="button"
+          :disabled="busy"
+          @click="removeProfile"
+        >
+          <Trash2 :size="16" aria-hidden="true" />删除这个宝宝
+        </button>
+      </div>
     </form>
 
     <section class="stats-grid" aria-label="本机记录统计">
@@ -396,17 +465,27 @@ function clearData() {
           <div>
             <strong>导出备份 JSON</strong>
             <p class="muted">
-              包含宝宝资料、成长记录、回顾，以及本机可用的原始照片与视频。文件较大时请耐心等待。
+              包含全部宝宝资料、成长记录、回顾，以及本机可用的原始照片与视频。文件较大时请耐心等待。
             </p>
           </div>
-          <button
-            class="button button-secondary"
-            type="button"
-            :disabled="busy"
-            @click="exportData"
-          >
-            <Download :size="16" aria-hidden="true" />导出
-          </button>
+          <div class="data-action-buttons">
+            <button
+              class="button button-secondary"
+              type="button"
+              :disabled="busy"
+              @click="exportData"
+            >
+              <Download :size="16" aria-hidden="true" />导出
+            </button>
+            <button
+              class="button button-ghost"
+              type="button"
+              :disabled="busy"
+              @click="exportLegacy"
+            >
+              导出当前宝宝的旧格式
+            </button>
+          </div>
         </div>
         <div class="data-action">
           <div>
@@ -510,6 +589,16 @@ function clearData() {
 .profile-card {
   padding: 22px;
   margin-top: 24px;
+}
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.data-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
 }
 .card-heading {
   justify-content: flex-start;

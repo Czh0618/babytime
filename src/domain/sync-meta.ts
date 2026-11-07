@@ -83,27 +83,13 @@ export function stampChanges(
         dirty.add(`${kind}:${item.id}`);
       }
   }
-  const milestones = next.milestones ?? {};
-  const oldMilestones = prev.milestones ?? {};
-  for (const [key, date] of Object.entries(milestones)) {
-    live.add(`milestone:${key}`);
-    if (oldMilestones[key] !== date) dirty.add(`milestone:${key}`);
-  }
-  for (const key of Object.keys(oldMilestones))
-    if (!(key in milestones)) {
-      tombstones.push({ kind: "milestone", id: key, deletedAt: now, deviceId });
-      dirty.add(`milestone:${key}`);
-    }
   next.tombstones = tombstones.filter(
     (item) => !live.has(`${item.kind}:${item.id}`),
   );
-  if (!sameJson(prev.baby, next.baby)) {
-    next.babyUpdatedAt = now;
-    dirty.add("baby");
-  }
-  if (!sameJson(prev.vaccinePlan, next.vaccinePlan)) {
-    next.vaccinePlanUpdatedAt = now;
-    dirty.add("vaccinePlan");
+  // 宝宝档案（含各自的疫苗计划与里程碑）整体同步，后写者胜。
+  if (!sameJson(prev.profiles, next.profiles)) {
+    next.profilesUpdatedAt = now;
+    dirty.add("profiles");
   }
   if (dirty.size) next.syncDirty = [...dirty];
 }

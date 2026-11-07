@@ -122,28 +122,31 @@ test("A 删除、B 修改：删除胜出，记录不复活（两种先后顺序�
   }
 });
 
-test("里程碑两端各勾不同项取并集，取消勾选能同步", async () => {
+test("宝宝档案整体同步：加宝宝、改资料、勾里程碑都能到另一台设备", async () => {
   const store = openStore();
   const a = device(store, "A");
   const b = device(store, "B");
-  a.write((ws) => (ws.milestones = { "m2:0": "2026-11-01" }));
-  b.write((ws) => (ws.milestones = { "m4:1": "2026-11-02" }));
+  a.write((ws) => ws.profiles.push({ id: "p2", name: "弟弟", birthDate: "2026-10-01" }));
+  a.write((ws) => {
+    ws.profiles[0]!.milestones = { "m2:0": "2026-11-01" };
+  });
   await a.sync();
   await b.sync();
   await a.sync();
-  assert.deepEqual(a.ws.milestones, { "m2:0": "2026-11-01", "m4:1": "2026-11-02" });
-  assert.deepEqual(b.ws.milestones, a.ws.milestones);
+  assert.deepEqual(b.ws.profiles.map((profile) => profile.name), ["宝宝", "弟弟"]);
+  assert.deepEqual(b.ws.profiles[0]!.milestones, { "m2:0": "2026-11-01" });
+  assert.deepEqual(a.ws.profiles, b.ws.profiles, "两边档案一致");
 
-  a.write((ws) => delete ws.milestones!["m2:0"]);
+  a.write((ws) => delete ws.profiles[0]!.milestones!["m2:0"]);
   await a.sync();
   await b.sync();
-  assert.deepEqual(b.ws.milestones, { "m4:1": "2026-11-02" });
+  assert.deepEqual(b.ws.profiles[0]!.milestones, {});
 });
 
 test("旧备份迁移后全量同步；资料、接种、素材元信息都过去，原片地址和示例不上传", async () => {
   const store = openStore();
   const old = emptyWorkspace();
-  old.baby = { name: "小米", birthDate: "2026-05-01" };
+  old.profiles[0] = { ...old.profiles[0]!, name: "小米", birthDate: "2026-05-01" };
   old.entries.push(entry("old"));
   old.media.push({
     id: "m1", kind: "image", name: "a.jpg", mime: "image/jpeg", size: 10,
@@ -157,7 +160,7 @@ test("旧备份迁移后全量同步；资料、接种、素材元信息都过�
   await a.sync();
   await b.sync();
 
-  assert.equal(b.ws.baby.name, "小米");
+  assert.equal(b.ws.profiles[0]!.name, "小米");
   assert.deepEqual(notes(b.ws), ["old:"]);
   assert.equal(b.ws.vaccinations?.[0]?.code, "HepB");
   assert.equal(b.ws.media.length, 1);
@@ -168,12 +171,12 @@ test("旧备份迁移后全量同步；资料、接种、素材元信息都过�
 test("新设备空资料不会盖掉已有资料；恢复备份后全量重同步", async () => {
   const store = openStore();
   const a = device(store, "A");
-  a.write((ws) => (ws.baby = { name: "小米", birthDate: "2026-05-01" }));
+  a.write((ws) => (ws.profiles[0] = { ...ws.profiles[0]!, name: "小米", birthDate: "2026-05-01" }));
   await a.sync();
   const b = device(store, "B");
   await b.sync();
-  assert.equal(b.ws.baby.name, "小米");
-  assert.equal(a.ws.baby.name, "小米");
+  assert.equal(b.ws.profiles[0]!.name, "小米");
+  assert.equal(a.ws.profiles[0]!.name, "小米");
 
   a.resetSince();
   const full = await a.sync();

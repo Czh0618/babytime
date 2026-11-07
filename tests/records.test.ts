@@ -106,11 +106,11 @@ test("回顾不能引用日期范围外或尚不存在的记录", () => {
 
 test("示例按需加载：不覆盖已有宝宝资料，清除后回到原状", () => {
   const workspace = emptyWorkspace();
-  workspace.baby = { name: "豆豆", birthDate: "2026-10-01" };
+  workspace.profiles[0] = { ...workspace.profiles[0]!, name: "豆豆", birthDate: "2026-10-01" };
   const before = JSON.parse(JSON.stringify(workspace));
   addDemo(workspace);
   addDemo(workspace); // 重复加载不叠加
-  assert.equal(workspace.baby.name, "豆豆");
+  assert.equal(workspace.profiles[0]!.name, "豆豆");
   assert.equal(
     workspace.entries.length,
     demoWorkspace().entries.length,
@@ -122,7 +122,7 @@ test("示例按需加载：不覆盖已有宝宝资料，清除后回到原状",
   const blankBefore = JSON.parse(JSON.stringify(blank));
   addDemo(blank);
   addDemo(blank);
-  assert.equal(blank.baby.name, demoWorkspace().baby.name);
+  assert.equal(blank.profiles[0]!.name, demoWorkspace().profiles[0]!.name);
   removeDemo(blank);
   assert.deepEqual(blank, blankBefore);
 });
@@ -130,13 +130,13 @@ test("示例按需加载：不覆盖已有宝宝资料，清除后回到原状",
 test("示例加载后保存的宝宝资料不会在清除示例时被覆盖", () => {
   const workspace = emptyWorkspace();
   addDemo(workspace);
-  workspace.baby = { name: "豆豆", birthDate: "2026-10-01" };
+  workspace.profiles[0] = { ...workspace.profiles[0]!, name: "豆豆", birthDate: "2026-10-01" };
 
   removeDemo(workspace);
 
-  assert.deepEqual(workspace.baby, {
-    name: "豆豆",
-    birthDate: "2026-10-01",
-  });
+  assert.deepEqual(
+    { name: workspace.profiles[0]!.name, birthDate: workspace.profiles[0]!.birthDate },
+    { name: "豆豆", birthDate: "2026-10-01" },
+  );
   assert.equal(workspace.demoProfileRestorePoint, undefined);
 });

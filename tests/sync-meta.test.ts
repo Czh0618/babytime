@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { addDemo, removeEntry } from "../src/domain/records.ts";
 import { demoWorkspace, emptyWorkspace } from "../src/domain/seed.ts";
 import { migrateSyncMeta, stampChanges } from "../src/domain/sync-meta.ts";
+import { migrateProfiles } from "../src/domain/profiles.ts";
 import { parseBackup } from "../src/domain/workspace-schema.ts";
-import type { GrowthEntry, Workspace } from "../src/types.ts";
+import type { GrowthEntry, LegacyWorkspace, Workspace } from "../src/types.ts";
 
 const NOW = "2026-11-07T08:00:00.000Z";
 const LATER = "2026-11-07T09:00:00.000Z";
@@ -18,23 +19,28 @@ function entry(id: string, capturedAt: string): GrowthEntry {
   };
 }
 
-/** 旧版本（P4.2 之前）的工作区：没有任何同步字段。 */
-function oldWorkspace(): Workspace {
+/** 旧版本（P4.2 之前）的工作区：顶层 baby、疫苗计划与里程碑，没有任何同步字段，也没有 profiles。 */
+function legacyWorkspace(): LegacyWorkspace {
   const workspace = emptyWorkspace();
-  workspace.entries.push(entry("a", "2026-11-01T10:00"), entry("b", "坏时间"));
-  workspace.recaps.push({
-    id: "r", title: "十一月", entryIds: ["a", "b"],
-    dateFrom: "2026-11-01", dateTo: "2026-11-30", createdAt: "2026-11-02T00:00:00.000Z",
-  });
-  workspace.vaccinations = [{
-    id: "v", code: "HepB", dose: 1, date: "2026-11-01", createdAt: "2026-11-01T03:00:00.000Z",
-  }];
-  workspace.milestones = { "m2:0": "2026-11-03" };
-  return workspace;
+  const { profiles: _profiles, activeProfileId: _active, ...legacy } = workspace;
+  return {
+    ...legacy,
+    baby: { name: "宝宝", birthDate: "" },
+    vaccinePlan: { specialProgram: false, choices: {} },
+    milestones: { "m2:0": "2026-11-03" },
+    entries: [entry("a", "2026-11-01T10:00"), entry("b", "坏时间")],
+    recaps: [{
+      id: "r", title: "十一月", entryIds: ["a", "b"],
+      dateFrom: "2026-11-01", dateTo: "2026-11-30", createdAt: "2026-11-02T00:00:00.000Z",
+    }],
+    vaccinations: [{
+      id: "v", code: "HepB", dose: 1, date: "2026-11-01", createdAt: "2026-11-01T03:00:00.000Z",
+    }],
+  };
 }
 
 function migrated(): Workspace {
-  const workspace = oldWorkspace();
+  const workspace = migrateProfiles(legacyWorkspace(), () => "p1");
   migrateSyncMeta(workspace, "dev-a", NOW);
   return workspace;
 }
@@ -47,7 +53,7 @@ test("迁移：updatedAt 取 capturedAt / createdAt，解析不了取迁移时�
   assert.equal(workspace.vaccinations![0]!.updatedAt, "2026-11-01T03:00:00.000Z");
   assert.equal(workspace.entries[0]!.deviceId, "dev-a");
   assert.deepEqual(workspace.tombstones, []);
-  assert.equal(workspace.babyUpdatedAt, undefined, "资料不补时间，避免空资料在同步时胜出");
+  assert.equal(workspace.profilesUpdatedAt, undefined, "档案不补时间，避免空资料在同步时胜出");
 
   const again = clone(workspace);
   migrateSyncMeta(again, "dev-b", LATER);
@@ -66,6 +72,7 @@ test("盖章：只有新增和改过的条目更新 updatedAt", () => {
   assert.equal(next.entries[1]!.updatedAt, NOW, "没动的条目保持原时间");
   assert.equal(next.entries[2]!.updatedAt, LATER);
   assert.deepEqual(next.tombstones, []);
+  assert.deepEqual(next.syncDirty, ["profiles", "entry:a", "entry:c"], "迁移后档案也要推一次");
 });
 
 test("删除写墓碑：记录被移除，引用它的回顾也算一次修改", () => {
@@ -83,38 +90,37 @@ test("删除写墓碑：记录被移除，引用它的回顾也算一次修改",
   assert.equal(next.recaps[0]!.updatedAt, LATER);
 });
 
-test("取消里程碑写墓碑，重新出现的条目撤销墓碑", () => {
+test("里程碑随档案整体同步：取消勾选记一次档案修改，不再写里程碑墓碑", () => {
   const prev = migrated();
   const unchecked = clone(prev);
-  unchecked.milestones = {};
+  unchecked.profiles[0]!.milestones = {};
   stampChanges(prev, unchecked, "dev-a", LATER);
-  assert.deepEqual(unchecked.tombstones, [
-    { kind: "milestone", id: "m2:0", deletedAt: LATER, deviceId: "dev-a" },
-  ]);
+  assert.deepEqual(unchecked.tombstones, []);
+  assert.equal(unchecked.profilesUpdatedAt, LATER);
+  assert.deepEqual(unchecked.syncDirty, ["profiles"]);
 
   const rechecked = clone(unchecked);
-  rechecked.milestones = { "m2:0": "2026-11-05" };
+  rechecked.profiles[0]!.milestones = { "m2:0": "2026-11-05" };
   stampChanges(unchecked, rechecked, "dev-a", LATER);
-  assert.deepEqual(rechecked.tombstones, []);
+  assert.equal(rechecked.profilesUpdatedAt, LATER);
 });
 
-test("示例数据删除不写墓碑；资料与疫苗计划变化记修改时间", () => {
+test("示例数据删除不写墓碑；档案资料与疫苗计划变化记档案修改时间", () => {
   const prev = migrated();
   addDemo(prev);
   const next = clone(prev);
   next.entries = next.entries.filter((item) => !item.demo);
   next.media = next.media.filter((item) => !item.demo);
-  next.baby = { ...next.baby, name: "小米" };
-  next.vaccinePlan = { specialProgram: true, choices: {} };
+  next.profiles[0]!.name = "小米";
+  next.profiles[0]!.vaccinePlan = { specialProgram: true, choices: {} };
   stampChanges(prev, next, "dev-a", LATER);
 
   assert.deepEqual(next.tombstones, []);
-  assert.equal(next.babyUpdatedAt, LATER);
-  assert.equal(next.vaccinePlanUpdatedAt, LATER);
+  assert.equal(next.profilesUpdatedAt, LATER);
 });
 
 test("备份：旧备份照常导入，带同步字段的新备份能往返，坏墓碑被拒绝", () => {
-  assert.doesNotThrow(() => parseBackup(JSON.stringify(oldWorkspace())));
+  assert.doesNotThrow(() => parseBackup(JSON.stringify(legacyWorkspace())));
   assert.doesNotThrow(() => parseBackup(JSON.stringify(demoWorkspace())));
 
   const prev = migrated();
@@ -127,8 +133,10 @@ test("备份：旧备份照常导入，带同步字段的新备份能往返，�
     { ...next, tombstones: [{ kind: "entry", id: "x" }] },
     { ...next, tombstones: [{ kind: "candidate", id: "x", deletedAt: LATER, deviceId: "d" }] },
     { ...next, tombstones: "x" },
-    { ...next, babyUpdatedAt: 1 },
+    { ...next, profilesUpdatedAt: 1 },
     { ...next, entries: [{ ...next.entries[0]!, updatedAt: 1 }] },
+    { ...next, profiles: [{ ...next.profiles[0]!, id: 1 }] },
+    { ...next, activeProfileId: "missing" },
   ])
-    assert.throws(() => parseBackup(JSON.stringify(broken)), /字段|不兼容/);
+    assert.throws(() => parseBackup(JSON.stringify(broken)), /字段|不兼容/, JSON.stringify(broken));
 });

@@ -10,14 +10,14 @@ export const MAX_BODY = 1024 * 1024;
 /** 墓碑保留 90 天，随拉取顺带清理（docs/SYNC.md 3.2 / 12）。 */
 export const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const KINDS = new Set(["entry", "vaccination", "recap", "media"]);
-const SINGLETONS = new Set(["baby", "vaccinePlan"]);
+const SINGLETONS = new Set(["profiles"]);
 
 type Row = Record<string, unknown>;
 export interface PushBody {
   deviceId: string;
   records?: Array<{ kind: string; id: string; deleted?: boolean; payload?: Row | null }>;
-  singletons?: Record<string, Row>;
-  milestones?: Record<string, string>;
+  /** `profiles` 是数组；结构校验单独处理。 */
+  singletons?: Record<string, Row | Row[]>;
 }
 export type Store = ReturnType<typeof openStore>;
 
@@ -32,8 +32,6 @@ export function openStore(file = ":memory:", clock: () => number = Date.now) {
     create index if not exists records_updated on records (updated_ms);
     create table if not exists singletons (
       key text primary key, payload text not null, updated_ms integer not null, device text);
-    create table if not exists milestones (
-      key text primary key, date text not null, updated_ms integer not null, device text);
   `);
   const q = {
     record: db.prepare("select payload, deleted from records where kind = ? and id = ?"),
@@ -45,13 +43,9 @@ export function openStore(file = ":memory:", clock: () => number = Date.now) {
     putSingleton: db.prepare(`insert into singletons (key, payload, updated_ms, device) values (?, ?, ?, ?)
       on conflict (key) do update set payload = excluded.payload,
       updated_ms = excluded.updated_ms, device = excluded.device`),
-    milestone: db.prepare("select date from milestones where key = ?"),
-    putMilestone: db.prepare(`insert into milestones (key, date, updated_ms, device) values (?, ?, ?, ?)
-      on conflict (key) do update set date = excluded.date,
-      updated_ms = excluded.updated_ms, device = excluded.device`),
     purge: db.prepare("delete from records where deleted = 1 and updated_ms < ?"),
     maxMs: db.prepare(`select max(m) as m from (select max(updated_ms) as m from records
-      union all select max(updated_ms) from singletons union all select max(updated_ms) from milestones)`),
+      union all select max(updated_ms) from singletons)`),
   };
   // 服务端时钟严格递增：同一毫秒内的多次写入也能被 since 区分开。
   let last = Number((q.maxMs.get() as Row | undefined)?.m ?? 0);
@@ -71,23 +65,17 @@ export function openStore(file = ":memory:", clock: () => number = Date.now) {
         kind: row.kind as string, id: row.id as string, deleted: Boolean(row.deleted),
         payload: row.deleted ? null : (JSON.parse(row.payload as string) as Row),
       }));
-    const singletons: Record<string, Row> = {};
+    const singletons: Record<string, Row | Row[]> = {};
     for (const row of db
       .prepare(`select key, payload from singletons
         where updated_ms > ? and updated_ms <= ? and coalesce(device, '') != ?`)
       .all(after, now, mine) as Row[])
-      singletons[row.key as string] = JSON.parse(row.payload as string) as Row;
-    const milestones: Record<string, string> = {};
-    for (const row of db
-      .prepare(`select key, date from milestones
-        where updated_ms > ? and updated_ms <= ? and coalesce(device, '') != ?`)
-      .all(after, now, mine) as Row[])
-      milestones[row.key as string] = row.date as string;
-    return { now, records, singletons, milestones };
+      singletons[row.key as string] = JSON.parse(row.payload as string) as Row | Row[];
+    return { now, records, singletons };
   }
 
   /** 写入一批变化：内容不变的跳过，已删除的不复活（列入 rejected，客户端据此删掉本地副本）。 */
-  function push({ deviceId, records = [], singletons = {}, milestones = {} }: PushBody) {
+  function push({ deviceId, records = [], singletons = {} }: PushBody) {
     const rejected: Array<{ kind: string; id: string }> = [];
     let applied = 0;
     db.exec("begin");
@@ -109,12 +97,6 @@ export function openStore(file = ":memory:", clock: () => number = Date.now) {
         q.putSingleton.run(key, payload, tick(), deviceId);
         applied++;
       }
-      for (const [key, date] of Object.entries(milestones)) {
-        const current = q.milestone.get(key) as Row | undefined;
-        if (current ? current.date === date : date === "") continue;
-        q.putMilestone.run(key, date, tick(), deviceId);
-        applied++;
-      }
       db.exec("commit");
     } catch (error) {
       db.exec("rollback");
@@ -124,7 +106,7 @@ export function openStore(file = ":memory:", clock: () => number = Date.now) {
   }
 
   function reset() {
-    db.exec("delete from records; delete from singletons; delete from milestones;");
+    db.exec("delete from records; delete from singletons;");
   }
 
   return { pull, push, reset, close: () => db.close() };
@@ -138,16 +120,19 @@ const shortString = (value: unknown): value is string =>
 /** 只做结构校验；业务规则（体温范围等）留在前端领域层，避免两份规则漂移。 */
 export function validPush(body: unknown): body is PushBody {
   if (!isObject(body) || !shortString(body.deviceId)) return false;
-  const { records = [], singletons = {}, milestones = {} } = body as Row;
+  const { records = [], singletons = {} } = body as Row;
   return (
     Array.isArray(records) && records.length <= 500 &&
     records.every((item: unknown) =>
       isObject(item) && KINDS.has(item.kind as string) && shortString(item.id) &&
       (item.deleted === true || (isObject(item.payload) && item.payload.id === item.id))) &&
     isObject(singletons) &&
-    Object.entries(singletons).every(([key, value]) => SINGLETONS.has(key) && isObject(value)) &&
-    isObject(milestones) &&
-    Object.entries(milestones).every(([key, value]) => shortString(key) && typeof value === "string")
+    Object.entries(singletons).every(([key, value]) =>
+      SINGLETONS.has(key) &&
+      (key === "profiles"
+        ? Array.isArray(value) && value.every((item) => isObject(item) && shortString(item.id))
+        : isObject(value)),
+    )
   );
 }
 

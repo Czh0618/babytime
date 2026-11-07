@@ -108,6 +108,7 @@ export function confirmCandidate(
     ...draft,
     title: draft.title.trim(),
     id,
+    babyId: candidate.babyId ?? workspace.activeProfileId,
     candidateId: candidate.id,
     mediaId: candidate.mediaId,
     favorite: false,
@@ -151,31 +152,38 @@ export function removeEntry(workspace: Workspace, id: string): void {
   }));
 }
 
-/** 把示例并入工作区；已填写有效生日的宝宝资料不被覆盖。 */
+/** 把示例并入当前宝宝的工作区；已填写有效生日的资料不被覆盖。 */
 export function addDemo(workspace: Workspace): void {
   removeDemo(workspace);
   const demo = demoWorkspace();
-  workspace.media.push(...demo.media);
-  workspace.candidates.push(...demo.candidates);
-  workspace.entries.push(...demo.entries);
-  workspace.recaps.push(...demo.recaps);
-  if (!workspace.baby.birthDate) {
+  const babyId = workspace.activeProfileId;
+  const tag = <T extends { babyId?: string }>(items: T[]) =>
+    items.map((item) => ({ ...item, babyId }));
+  workspace.media.push(...tag(demo.media));
+  workspace.candidates.push(...tag(demo.candidates));
+  workspace.entries.push(...tag(demo.entries));
+  workspace.recaps.push(...tag(demo.recaps));
+  const profile = workspace.profiles.find((item) => item.id === babyId);
+  if (profile && !profile.birthDate) {
+    const demoBaby = demo.profiles[0]!;
     workspace.demoProfileRestorePoint = {
-      previousBaby: { ...workspace.baby },
-      demoBaby: { ...demo.baby },
+      previousBaby: { ...profile },
+      demoBaby: { ...demoBaby },
     };
-    workspace.baby = { ...demo.baby };
+    Object.assign(profile, { name: demoBaby.name, birthDate: demoBaby.birthDate });
   }
 }
 
 export function removeDemo(workspace: Workspace): void {
   const restorePoint = workspace.demoProfileRestorePoint;
+  const active = workspace.profiles.find((item) => item.id === workspace.activeProfileId);
   if (
     restorePoint &&
-    workspace.baby.name === restorePoint.demoBaby.name &&
-    workspace.baby.birthDate === restorePoint.demoBaby.birthDate
+    active &&
+    active.name === restorePoint.demoBaby.name &&
+    active.birthDate === restorePoint.demoBaby.birthDate
   ) {
-    workspace.baby = { ...restorePoint.previousBaby };
+    Object.assign(active, restorePoint.previousBaby);
   }
   delete workspace.demoProfileRestorePoint;
   workspace.entries = workspace.entries.filter((entry) => !entry.demo);

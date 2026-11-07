@@ -33,7 +33,8 @@ test("非 JSON、版本不符、结构缺失的备份都会被拒绝", () => {
   assert.throws(() => parseBackup("not json"), /不是有效的备份文件/);
   const bad = [
     { ...demoWorkspace(), schemaVersion: 2 },
-    { ...demoWorkspace(), baby: undefined },
+    { ...demoWorkspace(), profiles: undefined },
+    { ...demoWorkspace(), activeProfileId: undefined },
     { ...demoWorkspace(), entries: "x" },
     { ...demoWorkspace(), media: [{ name: "无 id" }] },
     {

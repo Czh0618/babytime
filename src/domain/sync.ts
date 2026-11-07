@@ -1,29 +1,27 @@
-import type { BabyProfile, VaccinePlan, Workspace } from "../types.ts";
+import type { BabyProfile, Workspace } from "../types.ts";
+import { activeProfileOf } from "./profiles.ts";
 import { removeEntry } from "./records.ts";
 import { LIST_KINDS, lists, type ListKind, type SyncItem } from "./sync-meta.ts";
 
-/** 线上格式，与 server/sync.mjs 对应。 */
+/** 线上格式，与 server/sync.ts 对应。 */
 export interface SyncRecord {
   kind: ListKind;
   id: string;
   deleted?: boolean;
   payload?: Record<string, unknown> | null;
 }
+/** 单条同步的整块内容：宝宝档案（各自的计划与里程碑都在里面）。 */
 export interface Singletons {
-  baby?: BabyProfile;
-  vaccinePlan?: VaccinePlan;
+  profiles?: BabyProfile[];
 }
 export interface PullResult {
   now: number;
   records: SyncRecord[];
   singletons: Singletons;
-  /** 空字符串表示另一台设备取消了勾选。 */
-  milestones: Record<string, string>;
 }
 export interface PushBatch {
   records: SyncRecord[];
   singletons: Singletons;
-  milestones: Record<string, string>;
   /** 每个推送键当时的内容指纹；推送成功后只清除没再改过的键。 */
   sent: Record<string, string>;
 }
@@ -43,48 +41,40 @@ function findItem(workspace: Workspace, kind: ListKind, id: string) {
 
 /** 某个键在本机的当前内容；已删除返回 "deleted"。 */
 function fingerprint(workspace: Workspace, key: string): string {
-  if (key === "baby") return JSON.stringify(workspace.baby);
-  if (key === "vaccinePlan") return JSON.stringify(workspace.vaccinePlan ?? null);
+  if (key === "profiles") return JSON.stringify(workspace.profiles);
   const [kind, ...rest] = key.split(":");
   const id = rest.join(":");
-  if (kind === "milestone") return workspace.milestones?.[id] ?? "";
   const item = findItem(workspace, kind as ListKind, id);
   return item ? JSON.stringify(stripLocal(item)) : "deleted";
 }
 
-/** 首次（或恢复备份后）全量推送时的键：全部非示例条目、待推墓碑、资料、计划与里程碑。 */
+/** 首次（或恢复备份后）全量推送时的键：全部非示例条目、待推墓碑与宝宝档案。 */
 function allKeys(workspace: Workspace): Set<string> {
   const keys = new Set(workspace.syncDirty ?? []);
   for (const kind of LIST_KINDS)
     for (const item of lists(workspace)[kind])
       if (!item.demo) keys.add(`${kind}:${item.id}`);
-  for (const key of Object.keys(workspace.milestones ?? {})) keys.add(`milestone:${key}`);
-  keys.add("baby");
-  if (workspace.vaccinePlan) keys.add("vaccinePlan");
+  keys.add("profiles");
   return keys;
 }
 
 export function buildPush(workspace: Workspace, full: boolean): PushBatch {
   const keys = full ? allKeys(workspace) : new Set(workspace.syncDirty ?? []);
-  const batch: PushBatch = { records: [], singletons: {}, milestones: {}, sent: {} };
+  const batch: PushBatch = { records: [], singletons: {}, sent: {} };
   for (const key of keys) {
     batch.sent[key] = fingerprint(workspace, key);
-    if (key === "baby") batch.singletons.baby = workspace.baby;
-    else if (key === "vaccinePlan") {
-      if (workspace.vaccinePlan) batch.singletons.vaccinePlan = workspace.vaccinePlan;
-    } else {
+    if (key === "profiles") batch.singletons.profiles = workspace.profiles;
+    else {
       const [kind, ...rest] = key.split(":");
+      if (!(LIST_KINDS as string[]).includes(kind!)) continue;
       const id = rest.join(":");
-      if (kind === "milestone") batch.milestones[id] = workspace.milestones?.[id] ?? "";
-      else if ((LIST_KINDS as string[]).includes(kind!)) {
-        const item = findItem(workspace, kind as ListKind, id);
-        if (item?.demo) continue;
-        batch.records.push(
-          item
-            ? { kind: kind as ListKind, id, payload: stripLocal(item) }
-            : { kind: kind as ListKind, id, deleted: true },
-        );
-      }
+      const item = findItem(workspace, kind as ListKind, id);
+      if (item?.demo) continue;
+      batch.records.push(
+        item
+          ? { kind: kind as ListKind, id, payload: stripLocal(item) }
+          : { kind: kind as ListKind, id, deleted: true },
+      );
     }
   }
   return batch;
@@ -153,19 +143,11 @@ export function applyPull(workspace: Workspace, pull: PullResult) {
     else list.push(next);
     changed++;
   }
-  if (pull.singletons.baby && !dirty.has("baby")) {
-    workspace.baby = pull.singletons.baby;
-    changed++;
-  }
-  if (pull.singletons.vaccinePlan && !dirty.has("vaccinePlan")) {
-    workspace.vaccinePlan = pull.singletons.vaccinePlan;
-    changed++;
-  }
-  for (const [key, date] of Object.entries(pull.milestones)) {
-    if (dirty.has(`milestone:${key}`)) continue;
-    workspace.milestones ??= {};
-    if (date) workspace.milestones[key] = date;
-    else delete workspace.milestones[key];
+  if (pull.singletons.profiles && !dirty.has("profiles")) {
+    workspace.profiles = pull.singletons.profiles;
+    // 远端删掉了当前宝宝时退回第一个，界面不会卡在空档案上。
+    if (!workspace.profiles.some((profile) => profile.id === workspace.activeProfileId))
+      workspace.activeProfileId = activeProfileOf(workspace).id ?? workspace.activeProfileId;
     changed++;
   }
   dropDirty(workspace, cleared);
@@ -195,12 +177,11 @@ export function finishPush(
 
 /** 按条数分批，每批不超过服务端上限；资料、计划和里程碑放在第一批。 */
 export function chunkPush(batch: PushBatch, size = 200) {
-  const chunks: Array<Pick<PushBatch, "records" | "singletons" | "milestones">> = [];
+  const chunks: Array<Pick<PushBatch, "records" | "singletons">> = [];
   for (let start = 0; start < batch.records.length || start === 0; start += size)
     chunks.push({
       records: batch.records.slice(start, start + size),
       singletons: start === 0 ? batch.singletons : {},
-      milestones: start === 0 ? batch.milestones : {},
     });
   return chunks;
 }
@@ -233,14 +214,14 @@ export async function runSync(options: {
     deviceId,
   })) as PullResult;
   let stats = { kept: 0, removed: 0, changed: 0 };
-  if (pull.records.length || Object.keys(pull.singletons).length || Object.keys(pull.milestones).length)
+  if (pull.records.length || Object.keys(pull.singletons).length)
     await merge((next) => {
       stats = applyPull(next, pull);
     });
   const batch = buildPush(read(), since === null);
   const rejected: Array<{ kind: ListKind; id: string }> = [];
   let pushed = 0;
-  if (batch.records.length || Object.keys(batch.singletons).length || Object.keys(batch.milestones).length) {
+  if (batch.records.length || Object.keys(batch.singletons).length) {
     for (const chunk of chunkPush(batch)) {
       const result = (await transport("/sync/push", { deviceId, ...chunk })) as {
         applied: number;

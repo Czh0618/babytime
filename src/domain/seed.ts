@@ -1,17 +1,26 @@
 import { localDate, localDateTime } from "./date.ts";
+import { createId } from "./id.ts";
 import type { Workspace } from "../types.ts";
 
-export function emptyWorkspace(): Workspace {
+export function emptyWorkspace(idFactory: () => string = createId): Workspace {
+  const id = idFactory();
   return {
     schemaVersion: 1,
-    baby: { name: "宝宝", birthDate: "" },
+    profiles: [
+      {
+        id,
+        name: "宝宝",
+        birthDate: "",
+        vaccinePlan: { specialProgram: false, choices: {} },
+        milestones: {},
+      },
+    ],
+    activeProfileId: id,
     media: [],
     candidates: [],
     entries: [],
     recaps: [],
     vaccinations: [],
-    vaccinePlan: { specialProgram: false, choices: {} },
-    milestones: {},
   };
 }
 
@@ -39,7 +48,16 @@ export function demoWorkspace(): Workspace {
   const themes = ["sand", "sage", "rose"] as const;
   const workspace: Workspace = {
     schemaVersion: 1,
-    baby: { name: "小满", birthDate: localDate(birth) },
+    profiles: [
+      {
+        id: "demo-profile",
+        name: "小满",
+        birthDate: localDate(birth),
+        vaccinePlan: { specialProgram: false, choices: {} },
+        milestones: {},
+      },
+    ],
+    activeProfileId: "demo-profile",
     media: dates.map((date, i) => ({
       id: `demo-media-${i}`,
       kind: "image",

@@ -20,11 +20,12 @@
 
 | 单元 | 是否同步 | 说明 |
 |---|---|---|
-| `baby`（资料） | 是 | 单条，整体覆盖 |
-| `entries`（成长与照护记录） | 是 | 按条同步，含 `care` 字段 |
+| `profiles`（宝宝档案） | 是 | 整组，整体覆盖（含各自的 `vaccinePlan` 与 `milestones`；P5 起） |
+| `entries`（成长与照护记录） | 是 | 按条同步，含 `care` 与 `babyId` |
 | `vaccinations`（接种记录） | 是 | 按条同步 |
-| `vaccinePlan`（特殊程序与二选一） | 是 | 单条，整体覆盖 |
-| `milestones`（里程碑勾选） | 是 | 键值表，按 key 合并 |
+| `vaccinePlan`（特殊程序与二选一） | 是 | 随宝宝档案整体同步（P5 起不再是顶层单条） |
+| `milestones`（里程碑勾选） | 是 | 随宝宝档案整体同步（P5 起不再是按键合并） |
+| `activeProfileId`（当前看的宝宝） | **否** | 设备偏好，各看各的 |
 | `recaps`（图文回顾） | 是 | 按条同步，只同步条目引用 |
 | `media`（素材元信息） | 部分 | 只同步 id / 名称 / 类型 / 大小 / 拍摄时间 / 时长，不含字节与预览 URL |
 | 原片与缩略图 | **否** | 对方记录显示「原片在另一台设备」 |
@@ -88,7 +89,7 @@ interface SyncMeta {
 |---|---|---|
 | `GET` | `/sync/health` | 返回 `{ ok: true, version }`，部署后自检用 |
 | `POST` | `/sync/pull` | 入参 `{ since?: string }`，返回 `{ now, entries, vaccinations, recaps, media, baby?, vaccinePlan?, milestones }`，只含 `serverUpdatedAt > since` 的条目（含墓碑） |
-| `POST` | `/sync/push` | 入参 `{ deviceId, records[], singletons{}, milestones{} }`，返回 `{ now, applied, rejected[] }`（落地格式见第 14 节） |
+| `POST` | `/sync/push` | 入参 `{ deviceId, records[], singletons{} }`，返回 `{ now, applied, rejected[] }`（落地格式见第 14 节；P5 起 `singletons` 只有 `profiles`） |
 | `POST` | `/sync/reset` | 家庭密钥 + 确认口令 `{"confirm":"清空同步数据"}`，清空服务端数据（回滚用） |
 
 约定：
@@ -228,3 +229,10 @@ create table milestones (
 - **密钥存放**：服务器上在 `/etc/babytime-sync.env`（仅 root 可读），首次安装时打印一次到终端；客户端只存 localStorage `babytime.sync`，不进 workspace 与备份 JSON。
 - **清空本机数据**会同时清除本机的家庭密钥（否则下次同步会把服务器上的记录全部拉回来）；服务器与家人设备不受影响。
 - **本机开发**：`vite.config.ts` 把 `/sync/` 代理到 `127.0.0.1:8787`，`BABYTIME_SYNC_ALLOW_HTTP=1 node server/sync.ts` 起服务端；`syncUnavailableReason()` 用 `isSecureContext` 判断，`127.0.0.1` / `localhost` 放行，部署后的 http 地址仍被拦下。
+
+## 15. 多宝宝（P5）对同步的影响
+
+- 宝宝档案从顶层 `baby` 改成 `profiles[]`，作为单个 singleton 整体覆盖；档案里带着各自的 `vaccinePlan` 与 `milestones`，所以两个宝宝的疫苗计划和勾选互不干扰。
+- 记录 payload 带 `babyId`；墓碑逻辑不变。删除宝宝 = 把它的记录全部移出，`stampChanges` 一并写墓碑，另一台设备同步后同样看不到。
+- 旧结构迁移出的宝宝用固定 id `default`：两台设备各自升级后记录归到同一个档案，不会因为随机 id 对不上而在对方设备上「消失」。新加的宝宝用随机 id。
+- `activeProfileId` 只存本机，不参与同步。

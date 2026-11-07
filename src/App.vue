@@ -83,9 +83,10 @@ import { buildEntriesCsv } from "./lib/csv";
 import { findAnniversary } from "./domain/anniversary";
 import { buildHandoffSummary } from "./domain/handoff";
 import { isNightTime } from "./domain/night";
-import { exportRecap, exportRecords } from "./lib/export";
+import { exportLegacyRecords, exportRecap, exportRecords } from "./lib/export";
 import type { PreparedMedia } from "./lib/media";
 import type {
+  BabyProfile,
   Candidate,
   EntryDraft,
   GrowthEntry,
@@ -130,6 +131,14 @@ const {
   pending,
   hasDemo,
   stats,
+  profiles,
+  activeProfile,
+  entries,
+  media,
+  recaps,
+  vaccinations,
+  milestones,
+  vaccinePlan,
 } = model;
 const tabs = [
   { id: "time", name: "今天", icon: NotebookPen },
@@ -511,6 +520,19 @@ function askRestore(file: File) {
   };
 }
 
+async function downloadLegacyBackup() {
+  const ok = await perform(async () => {
+    const { name, missing } = await exportLegacyRecords(workspace.value);
+    say(
+      missing
+        ? `已导出 ${name}，但其中有 ${missing} 个素材缺少原片。回退旧版本后可用它恢复当前宝宝的记录。`
+        : `已导出 ${name}，可用于回退旧版本时恢复当前宝宝。`,
+      missing > 0,
+    );
+  });
+  if (ok) markBackupDone();
+}
+
 async function downloadBackup() {
   const ok = await perform(async () => {
     const missing = await exportRecords(workspace.value);
@@ -536,6 +558,25 @@ function downloadVaccineEvent(task: VaccineTask) {
     icsFileName(event),
   );
   say("已生成日历文件，导入后会提前一天提醒。");
+}
+
+function addProfile(baby: BabyProfile) {
+  void perform(async () => {
+    await model.addProfile(baby);
+  }, "已添加宝宝并切换过去，记录会分开保存。");
+}
+
+function askRemoveProfile(id: string) {
+  const profile = profiles.value.find((item) => item.id === id);
+  if (!profile) return;
+  overlay.value = {
+    kind: "confirm",
+    title: `删除「${profile.name}」的档案？`,
+    description:
+      "这会从这台设备移除该宝宝的资料、记录、接种与素材，并同步到家人的设备；另一个设备上的原片仍各自保留。至少保留一个宝宝档案。",
+    confirmLabel: "确认删除",
+    action: () => model.deleteProfile(id),
+  };
 }
 
 function askDeleteRecap(id: string) {
@@ -571,39 +612,45 @@ function saveMeasurement(values: {
 }
 
 function toggleMilestoneKey(key: string) {
-  const next = toggleMilestone(workspace.value.milestones ?? {}, key);
+  const next = toggleMilestone(milestones.value, key);
   void perform(() => model.saveMilestones(next));
 }
 
 const visitOpen = ref(false);
 const anniversaryDismissed = ref(false);
 const anniversary = computed(() =>
-  findAnniversary(workspace.value.baby, workspace.value.entries),
+  findAnniversary(activeProfile.value, entries.value),
 );
 const handoff = computed(() =>
-  buildHandoffSummary(workspace.value.entries, {
-    name: workspace.value.baby.name,
+  buildHandoffSummary(entries.value, {
+    name: activeProfile.value.name,
   }),
 );
 const ageMonths = computed(() => {
-  const age = ageOn(workspace.value.baby.birthDate);
+  const age = ageOn(activeProfile.value.birthDate);
   return age.valid ? age.months : undefined;
 });
 const visitSummary = computed(() =>
   buildVisitSummary(
-    workspace.value.entries,
-    workspace.value.baby,
-    workspace.value.vaccinations ?? [],
-    workspace.value.vaccinePlan ?? defaultVaccinePlan(),
+    entries.value,
+    activeProfile.value,
+    vaccinations.value,
+    vaccinePlan.value,
   ),
 );
+
+/** 切换当前宝宝只影响本机显示，不重载页面、也不进同步。 */
+function switchBaby(event: Event) {
+  const id = (event.target as HTMLSelectElement).value;
+  void perform(() => model.switchProfile(id));
+}
 
 function printVisit() {
   window.print();
 }
 
 function exportCsv() {
-  const name = workspace.value.baby.name || "宝宝";
+  const name = activeProfile.value.name || "宝宝";
   downloadBlob(
     new Blob([buildEntriesCsv(workspace.value.entries)], {
       type: "text/csv;charset=utf-8",
@@ -720,6 +767,14 @@ onBeforeUnmount(() => {
           <p>{{ storageError }}</p>
           <p>已有内容未被改动，请允许浏览器存储后刷新页面。</p>
         </div>
+        <div v-if="profiles.length > 1" class="profile-switch">
+          <label for="profile-select">当前宝宝</label>
+          <select id="profile-select" :value="activeProfile.id" @change="switchBaby">
+            <option v-for="profile in profiles" :key="profile.id" :value="profile.id">
+              {{ profile.name }}
+            </option>
+          </select>
+        </div>
         <div v-if="hasDemo && tab !== 'family'" class="demo-banner">
           <span>当前包含示例记录，不是真实宝宝影像。</span
           ><button type="button" @click="navigate('family')">
@@ -735,9 +790,9 @@ onBeforeUnmount(() => {
         </div>
         <TimeView
           v-if="tab === 'time'"
-          :baby="workspace.baby"
-          :entries="workspace.entries"
-          :media="workspace.media"
+          :baby="activeProfile"
+          :entries="entries"
+          :media="media"
           :pending-count="pending.length"
           :night="night"
           @add="openImport"
@@ -777,15 +832,15 @@ onBeforeUnmount(() => {
               @cancel="cancelTimer"
             />
             <TodayCareSummary
-              :entries="workspace.entries"
+              :entries="entries"
               :night="night"
               @voice="openVoice"
               @open="(entry) => (overlay = { kind: 'detail', id: entry.id })"
             />
             <HandoffCard v-if="handoff" :summary="handoff" :ai-ready="aiReady" />
             <AgeGuideCard
-              :baby="workspace.baby"
-              :milestones="workspace.milestones ?? {}"
+              :baby="activeProfile"
+              :milestones="milestones"
               @record="openActivity"
               @milestone="toggleMilestoneKey"
             />
@@ -794,7 +849,7 @@ onBeforeUnmount(() => {
         <InboxView
           v-else-if="tab === 'inbox'"
           :candidates="pending"
-          :media="workspace.media"
+          :media="media"
           :ai-available="aiReady"
           :suggesting-id="suggestingId"
           @add="openImport"
@@ -808,9 +863,9 @@ onBeforeUnmount(() => {
         />
         <RecapView
           v-else-if="tab === 'recap'"
-          :entries="workspace.entries"
-          :media="workspace.media"
-          :recaps="workspace.recaps"
+          :entries="entries"
+          :media="media"
+          :recaps="recaps"
           :busy="busy"
           :error="formError"
           :age-months="ageMonths"
@@ -828,11 +883,11 @@ onBeforeUnmount(() => {
         />
         <HealthView
           v-else-if="tab === 'health'"
-          :baby="workspace.baby"
-          :plan="workspace.vaccinePlan ?? defaultVaccinePlan()"
-          :records="workspace.vaccinations ?? []"
-          :entries="workspace.entries"
-          :milestones="workspace.milestones ?? {}"
+          :baby="activeProfile"
+          :plan="vaccinePlan"
+          :records="vaccinations"
+          :entries="entries"
+          :milestones="milestones"
           :busy="busy"
           :ai-ready="aiReady"
           @save-plan="saveVaccinePlan"
@@ -845,7 +900,8 @@ onBeforeUnmount(() => {
         />
         <FamilyView
           v-else
-          :baby="workspace.baby"
+          :baby="activeProfile"
+          :profiles="profiles"
           :stats="stats"
           :has-demo="hasDemo"
           :busy="busy"
@@ -855,9 +911,12 @@ onBeforeUnmount(() => {
           @clear-demo="
             perform(model.clearDemo, '已移除示例，真实记录仍然保留。')
           "
+          @add-profile="addProfile"
+          @remove-profile="askRemoveProfile"
           @clear-data="askClear"
           @restore-data="askRestore"
           @export-data="downloadBackup"
+          @export-legacy="downloadLegacyBackup"
           @open-ai-settings="openAiSettings"
           @open-sync-settings="overlay = { kind: 'syncSettings' }"
           @sync-now="syncNow(true)"
@@ -866,7 +925,7 @@ onBeforeUnmount(() => {
     </main>
     <VisitSummary
       v-if="visitOpen"
-      :baby-name="workspace.baby.name"
+      :baby-name="activeProfile.name"
       :summary="visitSummary"
       @close="visitOpen = false"
       @print="printVisit"
@@ -925,9 +984,9 @@ onBeforeUnmount(() => {
     <RecapPreview
       v-if="overlay?.kind === 'recap' && recap"
       :recap="recap"
-      :entries="workspace.entries"
-      :media="workspace.media"
-      :baby-name="workspace.baby.name"
+      :entries="entries"
+      :media="media"
+      :baby-name="activeProfile.name"
       :busy="busy"
       :error="formError"
       @close="overlay = null"

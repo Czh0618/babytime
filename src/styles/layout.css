@@ -122,6 +122,23 @@
   max-width: 750px;
   width: 100%;
 }
+.profile-switch {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 18px;
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+.profile-switch select {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
 .demo-banner {
   display: flex;
   align-items: center;

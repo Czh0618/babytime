@@ -74,10 +74,11 @@ test("预产期：早产可用，和生日差太远要拦下", () => {
 
 test("备份校验接受新字段，拒绝非法性别", () => {
   const workspace = emptyWorkspace();
-  workspace.baby = { name: "小满", birthDate: "2026-05-01" };
+  workspace.profiles[0] = { ...workspace.profiles[0]!, name: "小满", birthDate: "2026-05-01" };
   assert.equal(isWorkspace(structuredClone(workspace)), true);
 
-  workspace.baby = {
+  workspace.profiles[0] = {
+    ...workspace.profiles[0]!,
     name: "小满",
     birthDate: "2026-05-01",
     sex: "female",
@@ -86,6 +87,6 @@ test("备份校验接受新字段，拒绝非法性别", () => {
   assert.equal(isWorkspace(structuredClone(workspace)), true);
 
   const broken = structuredClone(workspace);
-  broken.baby.sex = "unknown" as never;
+  broken.profiles[0]!.sex = "unknown" as never;
   assert.equal(isWorkspace(broken), false);
 });
