@@ -11,6 +11,7 @@ import {
   sleepSummaryForDay,
 } from "../domain/sleep";
 import { nightSummary } from "../domain/stats";
+import { nextFeedingReference } from "../domain/feeding";
 const props = withDefaults(
   defineProps<{ entries: GrowthEntry[]; night?: boolean }>(),
   { night: false },
@@ -32,6 +33,9 @@ const nightly = computed(() =>
     deriveSleepSegments(props.entries),
     new Date(now.value),
   ),
+);
+const reference = computed(() =>
+  nextFeedingReference(props.entries, new Date(now.value)),
 );
 const tick = () => (now.value = Date.now());
 const timer = setInterval(tick, 60_000);
@@ -113,6 +117,10 @@ const latest = computed(() => {
       今日奶量：摄入 {{ milk.intakeMl }} ml<span v-if="milk.pumpedMl">
         · 吸出 {{ milk.pumpedMl }} ml（不计入摄入）</span
       >
+    </p>
+    <p v-if="reference" class="milk-summary">
+      下次喂奶参考：约 {{ reference.time }} · 按最近
+      {{ reference.sampleSize }} 次间隔{{ reference.passed ? "（已过）" : "" }}
     </p>
     <p v-if="sleep.totalMinutes" class="milk-summary">
       今日睡眠：共 {{ formatMinutes(sleep.totalMinutes) }} · 最长一段
