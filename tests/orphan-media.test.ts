@@ -21,17 +21,37 @@ test("白名单包含素材元信息、记录与候选的引用，以及刚写�
   workspace.entries = [
     {
       id: "e1", title: "记录", note: "", capturedAt: "2026-11-07T09:00",
-      tag: "日常备注", milestone: false, favorite: false, mediaId: "m2",
+      tag: "日常备注", milestone: false, favorite: false, mediaIds: ["m2"],
     },
   ];
   workspace.candidates = [
     {
-      id: "c1", mediaId: "m3", title: "待整理", note: "",
+      id: "c1", mediaIds: ["m3"], title: "待整理", note: "",
       capturedAt: "2026-11-07T09:00", origin: "upload", status: "pending",
     },
   ];
   assert.deepEqual(referencedMediaIds(workspace, ["m0"]), ["m0", "m1", "m2", "m3"]);
   assert.deepEqual(referencedMediaIds(workspace), ["m1", "m2", "m3"]);
+});
+
+test("P7.1：多图记录删掉一张，只回收那一张的原片", () => {
+  const workspace = emptyWorkspace();
+  workspace.media = ["m1", "m2", "m3"].map((id) => ({
+    id, kind: "image" as const, name: `${id}.jpg`, mime: "image/jpeg", size: 10,
+    capturedAt: "2026-11-08T09:00", theme: "sand" as const,
+  }));
+  workspace.entries = [{
+    id: "e1", title: "三张照片", note: "", capturedAt: "2026-11-08T09:00",
+    tag: "日常片刻", milestone: false, favorite: false,
+    mediaIds: ["m1", "m2", "m3"],
+  }];
+  // 用户把第二张移出记录：引用与素材元信息一起去掉，GC 只应删 m2。
+  workspace.entries[0]!.mediaIds = ["m1", "m3"];
+  workspace.media = workspace.media.filter((item) => item.id !== "m2");
+  assert.deepEqual(
+    orphanMediaIds(["m1", "m2", "m3"], referencedMediaIds(workspace)),
+    ["m2"],
+  );
 });
 
 /** 极简 IndexedDB 替身：只需覆盖 getAllKeys / delete / 事务完成事件。 */

@@ -18,8 +18,8 @@ export function buildHandoffSummary(
   entries: GrowthEntry[],
   options: { name?: string; today?: string; now?: Date } = {},
 ): string {
-  const today = options.today ?? localDate();
   const now = options.now ?? new Date();
+  const today = options.today ?? localDate(now);
   const name = options.name || "宝宝";
   const day = aggregateByDay(entries, 1, today)[0]!;
   const milk = summarizeMilk(entries, today);

@@ -3,7 +3,7 @@ import { ref } from "vue";
 import { ImagePlus, NotebookPen, ShieldCheck, Upload } from "@lucide/vue";
 import ModalDialog from "./ModalDialog.vue";
 
-defineProps<{ busy: boolean; progress: string; errors: string[] }>();
+defineProps<{ busy: boolean; progress: string; errors: string[]; warnings?: string[] }>();
 const emit = defineEmits<{ close: []; import: [files: File[]]; manual: [] }>();
 const input = ref<HTMLInputElement>();
 const dragging = ref(false);
@@ -38,7 +38,7 @@ function drop(event: DragEvent) {
       </div>
       <h3>照片、视频，都可以</h3>
       <p class="muted">
-        每次最多 10 个 · 单个不超过 100 MB<br />短视频最长 2 分钟
+        照片最多 9 张合为一条 · 视频各自成条<br />每次最多 20 个文件 · 单个不超过 100 MB · 短视频最长 2 分钟
       </p>
       <button
         class="button button-primary"
@@ -60,6 +60,9 @@ function drop(event: DragEvent) {
       />
     </div>
     <p v-if="progress" class="progress-message" role="status">{{ progress }}</p>
+    <div v-if="warnings?.length" class="warning-box" role="status">
+      <p v-for="warning in warnings" :key="warning">{{ warning }}</p>
+    </div>
     <div v-if="errors.length" class="error-box" role="alert">
       <strong>这些素材暂时没能保存：</strong>
       <p v-for="error in errors" :key="error">{{ error }}</p>
@@ -67,7 +70,7 @@ function drop(event: DragEvent) {
     <div class="import-privacy">
       <ShieldCheck :size="18" />
       <p>
-        原片只保存到当前浏览器，不会上传。记录时间默认取文件时间，可以在整理时修改；AI
+        开启多设备同步后，照片与缩略图会存到你自己的服务器，视频只保存在这台设备；没开启时全部只留在本机。记录时间默认取文件时间，可以在整理时修改；AI
         辅助只接收你写下的文字。
       </p>
     </div>
@@ -141,5 +144,17 @@ function drop(event: DragEvent) {
 .error-box p {
   margin-top: 6px;
   overflow-wrap: anywhere;
+}
+.warning-box {
+  padding: 10px 12px;
+  margin: 12px 0;
+  border-radius: 11px;
+  background: var(--tint);
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.warning-box p {
+  margin: 0;
 }
 </style>

@@ -4,7 +4,7 @@ import { addDemo, removeEntry } from "../src/domain/records.ts";
 import { demoWorkspace, emptyWorkspace } from "../src/domain/seed.ts";
 import { migrateSyncMeta, stampChanges } from "../src/domain/sync-meta.ts";
 import { migrateProfiles } from "../src/domain/profiles.ts";
-import { parseBackup } from "../src/domain/workspace-schema.ts";
+import { migrateMediaIds, parseBackup } from "../src/domain/workspace-schema.ts";
 import type { GrowthEntry, LegacyWorkspace, Workspace } from "../src/types.ts";
 
 const NOW = "2026-11-07T08:00:00.000Z";
@@ -127,7 +127,10 @@ test("备份：旧备份照常导入，带同步字段的新备份能往返，�
   const next = clone(prev);
   removeEntry(next, "b");
   stampChanges(prev, next, "dev-a", LATER);
-  assert.deepEqual(parseBackup(JSON.stringify(next)), JSON.parse(JSON.stringify(next)));
+  assert.deepEqual(
+    parseBackup(JSON.stringify(next)),
+    migrateMediaIds(JSON.parse(JSON.stringify(next))),
+  );
 
   for (const broken of [
     { ...next, tombstones: [{ kind: "entry", id: "x" }] },

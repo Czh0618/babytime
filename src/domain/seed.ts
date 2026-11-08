@@ -70,7 +70,7 @@ export function demoWorkspace(): Workspace {
     })),
     entries: dates.map((date, i) => ({
       id: `demo-entry-${i}`,
-      mediaId: `demo-media-${i}`,
+      mediaIds: [`demo-media-${i}`],
       title: titles[i]!,
       note: notes[i]!,
       capturedAt: date,
@@ -82,7 +82,7 @@ export function demoWorkspace(): Workspace {
     candidates: [
       {
         id: "demo-smile",
-        mediaId: "demo-video-smile",
+        mediaIds: ["demo-video-smile"],
         title: "这一刻，你的小小笑脸",
         suggestion: "疑似互动微笑",
         note: "想把你的小小笑脸，留给以后的我们。",
@@ -94,7 +94,7 @@ export function demoWorkspace(): Workspace {
       },
       {
         id: "demo-tummy",
-        mediaId: "demo-video-tummy",
+        mediaIds: ["demo-video-tummy"],
         title: "趴着看世界的片刻",
         suggestion: "疑似抬头片段",
         note: "今天也在认真地看这个世界。",
@@ -109,7 +109,7 @@ export function demoWorkspace(): Workspace {
   };
   workspace.media.push(
     ...workspace.candidates.map((candidate, i) => ({
-      id: candidate.mediaId,
+      id: candidate.mediaIds[0]!,
       kind: "video" as const,
       name: `IMG_DEMO_${i + 1}.MOV`,
       mime: "video/quicktime",

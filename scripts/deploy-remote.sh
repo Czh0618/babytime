@@ -158,6 +158,8 @@ install_sync() {
   id babytime-sync >/dev/null 2>&1 ||
     useradd --system --home-dir /var/lib/babytime --shell /usr/sbin/nologin babytime-sync
   install -d -m 0750 -o babytime-sync -g babytime-sync /var/lib/babytime
+  # P7.2：照片原片与缩略图存 ECS 本机磁盘，服务用户对目录可写。
+  install -d -m 0750 -o babytime-sync -g babytime-sync /var/lib/babytime/media
   install -d -m 0755 /opt/babytime-sync
   install -m 0644 "$STAGE/sync.ts" /opt/babytime-sync/sync.ts
   if [[ ! -s "$SYNC_ENV" ]]; then
@@ -173,6 +175,7 @@ After=network.target
 User=babytime-sync
 EnvironmentFile=$SYNC_ENV
 Environment=BABYTIME_SYNC_DB=/var/lib/babytime/sync.db
+Environment=BABYTIME_MEDIA_DIR=/var/lib/babytime/media
 ExecStart=$(command -v node) /opt/babytime-sync/sync.ts
 Restart=always
 NoNewPrivileges=true
@@ -192,7 +195,18 @@ if [[ -f "$STAGE/sync.ts" ]]; then
 fi
 SYNC_LOCATION=""
 if [[ -f "$SYNC_UNIT" ]]; then
+  # 最长前缀匹配：/sync/media/ 优先于 /sync/，照片流式上传不落 Nginx 临时缓冲。
   SYNC_LOCATION="
+    location /sync/media/ {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_http_version 1.1;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        client_max_body_size 20m;
+    }
+
     location /sync/ {
         proxy_pass http://127.0.0.1:8787;
         proxy_set_header Host \$host;
@@ -282,6 +296,44 @@ has_certificate() {
   [[ -s "$CERT_DIR/fullchain.pem" && -s "$CERT_DIR/privkey.pem" ]]
 }
 
+cert_expiry() {
+  openssl x509 -enddate -noout -in "$CERT_DIR/fullchain.pem" 2>/dev/null |
+    sed -n 's/^notAfter=//p'
+}
+
+# 剩余有效期（天）。ip-https 用 6 天短证书，续期失败时必须让运维看见「还剩几天」，
+# 不然容易等到过期才发现 HTTPS 掉了（多设备同步也要求 HTTPS）。
+cert_days_left() {
+  local end end_epoch now
+  end=$(cert_expiry)
+  [[ -n "$end" ]] || return 0
+  end_epoch=$(date -d "$end" +%s 2>/dev/null) || return 0
+  [[ "$end_epoch" =~ ^[0-9]+$ ]] || return 0
+  now=$(date +%s)
+  printf '%s' "$(( (end_epoch - now) / 86400 ))"
+}
+
+# 续期失败不阻断发布（应用代码该上线还是上线），但要把剩余时间与补救命令说清楚。
+report_renewal_failure() {
+  local left end
+  left=$(cert_days_left)
+  end=$(cert_expiry)
+  printf 'Warning: certificate renewal failed; keeping the existing certificate' >&2
+  if [[ -n "$end" && -n "$left" ]]; then
+    printf ' (expires %s, about %s day(s) left).\n' "$end" "$left" >&2
+  elif [[ -n "$end" ]]; then
+    printf ' (expires %s).\n' "$end" >&2
+  else
+    printf '.\n' >&2
+  fi
+  if [[ -n "$left" && "$left" -le 1 ]]; then
+    printf 'URGENT: HTTPS stops working when this certificate expires, and multi-device sync needs HTTPS.\n' >&2
+  else
+    printf 'The snap renew timer retries automatically; to retry now:\n' >&2
+  fi
+  printf '  sudo /snap/bin/certbot renew --cert-name %s -v\n' "$IP_CERT_NAME" >&2
+}
+
 issue_ip_certificate() {
   install -d -m 0755 "$ACME_ROOT"
   if "$CERTBOT" certonly --webroot -w "$ACME_ROOT" --ip-address "$PUBLIC_IP" \
@@ -290,7 +342,7 @@ issue_ip_certificate() {
     return 0
   fi
   has_certificate || die "Could not obtain an IP certificate (see the Certbot error above); the site stays on HTTP."
-  printf 'Warning: certificate renewal failed; keeping the existing certificate.\n' >&2
+  report_renewal_failure
 }
 
 if [[ "$MODE" == "ip" ]]; then

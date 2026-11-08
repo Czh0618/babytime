@@ -54,7 +54,7 @@ test("无 MIME 和带参数 MIME 的合法原片可以往返", () => {
 
 test("损坏、重复或无引用的媒体以及未知备份版本在恢复前被拒绝", () => {
   const bad = [
-    { ...backup(), backupVersion: 2 },
+    { ...backup(), backupVersion: 3 },
     { ...backup(), mediaFiles: null },
     { ...backup(), mediaFiles: [...backup().mediaFiles, ...backup().mediaFiles] },
     { ...backup(), mediaFiles: [{ ...backup().mediaFiles[0], id: "unknown" }] },

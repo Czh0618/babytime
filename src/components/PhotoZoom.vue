@@ -1,22 +1,38 @@
 <script setup lang="ts">
 import { nextTick, ref } from "vue";
 import { X } from "@lucide/vue";
+import type { MediaAsset } from "../types";
+import { ensureRemoteOriginal } from "../lib/media-sync";
 
 // 叠在照片上的透明按钮，点开后全屏看原图。父元素需要 position: relative。
-defineProps<{ src: string; label?: string }>();
+// P7.2：本机没有原片时，点开的同时去自己的服务器按需取回并缓存。
+const props = defineProps<{ src?: string; media?: MediaAsset; label?: string }>();
 const trigger = ref<HTMLButtonElement>();
 const dialog = ref<HTMLDialogElement>();
 const open = ref(false);
 const failed = ref(false);
+const loading = ref(false);
+const activeSrc = ref("");
 
 async function show() {
   // iOS Safari 点按钮不会让按钮获得焦点；先手动聚焦，
   // 关闭大图时焦点回到这里，而不是跳回输入框弹出键盘。
   trigger.value?.focus({ preventScroll: true });
   failed.value = false;
+  activeSrc.value = props.src ?? "";
   open.value = true;
   await nextTick();
   dialog.value?.showModal();
+  if (props.media && !props.media.url) {
+    loading.value = true;
+    try {
+      activeSrc.value = await ensureRemoteOriginal(props.media);
+    } catch {
+      // 取不到原片就退回缩略图，仍然可以看，不弹错误打断操作。
+    } finally {
+      loading.value = false;
+    }
+  }
 }
 </script>
 
@@ -40,12 +56,16 @@ async function show() {
       <p v-if="failed" class="viewer-error">
         原图暂时打不开，可以关闭后重试。
       </p>
+      <p v-else-if="loading" class="viewer-hint" role="status">
+        正在取回原图…
+      </p>
       <img
-        v-else
-        :src="src"
+        v-else-if="activeSrc"
+        :src="activeSrc"
         :alt="label || '照片大图'"
         @error="failed = true"
       />
+      <p v-else class="viewer-error">这张照片暂时没有可显示的画面。</p>
       <!-- 点击冒泡到 dialog 关闭；按钮主要给读屏和键盘一个明确的关闭入口 -->
       <button
         class="icon-button viewer-close"
@@ -100,13 +120,15 @@ async function show() {
   height: 100%;
   object-fit: contain;
 }
-.viewer-error {
+.viewer-error,
+.viewer-hint {
   display: grid;
   place-items: center;
   height: 100%;
   padding: 24px;
   font-size: 14px;
   text-align: center;
+  margin: 0;
 }
 .viewer-close {
   position: absolute;

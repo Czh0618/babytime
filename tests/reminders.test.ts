@@ -73,10 +73,10 @@ test("月度回顾草稿取上个月，优先收藏与里程碑", () => {
     year: 2026,
   });
   const entries = [
-    entry("f1", "2026-10-02T10:00", undefined, { favorite: true, mediaId: "m1" }),
-    entry("m1", "2026-10-03T10:00", undefined, { milestone: true, mediaId: "m2" }),
-    entry("f2", "2026-10-04T10:00", undefined, { favorite: true, mediaId: "m3" }),
-    entry("x1", "2026-10-05T10:00", undefined, { mediaId: "m4" }),
+    entry("f1", "2026-10-02T10:00", undefined, { favorite: true, mediaIds: ["m1"] }),
+    entry("m1", "2026-10-03T10:00", undefined, { milestone: true, mediaIds: ["m2"] }),
+    entry("f2", "2026-10-04T10:00", undefined, { favorite: true, mediaIds: ["m3"] }),
+    entry("x1", "2026-10-05T10:00", undefined, { mediaIds: ["m4"] }),
     entry("old", "2026-09-30T10:00"),
   ];
   const draft = suggestMonthlyRecap(entries, "2026-11-07");

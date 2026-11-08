@@ -8,7 +8,9 @@ import type {
   Recap,
   RecapDraft,
   Workspace,
+  MediaSlotInput,
 } from "../types";
+import { MAX_ENTRY_MEDIA } from "../types";
 import { localDateTime } from "../domain/date";
 import { createId } from "../domain/id";
 import { emptyWorkspace } from "../domain/seed";
@@ -37,8 +39,8 @@ import {
   shouldRefreshFromPeer,
   WORKSPACE_CHANNEL,
 } from "./peer-refresh";
-import { inspectMedia, validateMediaFile, type PreparedMedia } from "./media";
-import { isWorkspace } from "../domain/workspace-schema";
+import { inspectMedia, mediaKindOf, validateMediaFile, type PreparedMedia } from "./media";
+import { isWorkspace, migrateMediaIds } from "../domain/workspace-schema";
 import { validateProfile } from "../domain/profile";
 import { defaultVaccinePlan } from "../domain/vaccines";
 import type { VaccinationRecord, VaccinePlan } from "../types";
@@ -50,6 +52,12 @@ import { migrateSyncMeta, stampChanges } from "../domain/sync-meta";
 import { activeProfileOf, migrateProfiles } from "../domain/profiles";
 import { referencedMediaIds } from "../domain/media-refs";
 import { runSync, type SyncOutcome } from "../domain/sync";
+import {
+  clearMediaProgress,
+  readMediaProgress,
+  syncMedia,
+  writeMediaProgress,
+} from "./media-sync";
 import {
   clearSyncConfig,
   createTransport,
@@ -120,7 +128,7 @@ export function useWorkspace() {
     try {
       const saved = await readWorkspace();
       if (!saved || !isWorkspace(saved)) return;
-      const next = migrateProfiles(saved, createId);
+      const next = migrateMediaIds(migrateProfiles(saved, createId));
       migrateSyncMeta(next, deviceId());
       // 当前宝宝是本机偏好，不跟着其它标签页的切换跑。
       if (next.profiles.some((item) => item.id === workspace.value.activeProfileId))
@@ -199,10 +207,37 @@ export function useWorkspace() {
         missing++;
         continue;
       }
-      item.url = URL.createObjectURL(data.file);
-      if (data.thumbnail) item.thumbnailUrl = URL.createObjectURL(data.thumbnail);
+      if (data.remoteOnly) {
+        // P7.2：原片还在服务器上，本机只存了缩略图，不能把 file 当原图显示。
+        item.url = undefined;
+        item.thumbnailUrl = URL.createObjectURL(data.thumbnail ?? data.file);
+      } else {
+        item.url = URL.createObjectURL(data.file);
+        if (data.thumbnail) item.thumbnailUrl = URL.createObjectURL(data.thumbnail);
+      }
     }
     return missing;
+  }
+
+  /** P7.2：从服务器拉到缩略图 / 原片后，只刷新这几条的预览地址，不动记录本身。 */
+  async function refreshAttachedMedia(ids: string[]) {
+    const wanted = new Set(ids);
+    for (const item of workspace.value.media) {
+      if (!wanted.has(item.id) || item.demo) continue;
+      const data = await readMedia(item.id);
+      if (!data) continue;
+      if (item.url) URL.revokeObjectURL(item.url);
+      if (item.thumbnailUrl) URL.revokeObjectURL(item.thumbnailUrl);
+      if (data.remoteOnly) {
+        item.url = undefined;
+        item.thumbnailUrl = URL.createObjectURL(data.thumbnail ?? data.file);
+      } else {
+        item.url = URL.createObjectURL(data.file);
+        item.thumbnailUrl = data.thumbnail
+          ? URL.createObjectURL(data.thumbnail)
+          : undefined;
+      }
+    }
   }
 
   async function load() {
@@ -211,7 +246,7 @@ export function useWorkspace() {
       if (saved) {
         if (!isWorkspace(saved))
           throw new Error("本机数据格式暂不支持，原有内容未被修改。");
-        workspace.value = migrateProfiles(saved, createId);
+        workspace.value = migrateMediaIds(migrateProfiles(saved, createId));
         migrateSyncMeta(workspace.value, deviceId());
       } else await writeWorkspace(workspace.value); // 首次进入为空白工作区，示例由用户主动加载
       await attachMedia(workspace.value);
@@ -228,7 +263,7 @@ export function useWorkspace() {
   /** 用备份覆盖当前工作区；返回原片不在本机的素材数量。 */
   async function restore(file: File) {
     const { workspace: decoded, mediaFiles } = decodeBackup(await file.text());
-    const next = migrateProfiles(decoded, createId);
+    const next = migrateMediaIds(migrateProfiles(decoded, createId));
     migrateSyncMeta(next, deviceId());
     const action = writes
       .catch(() => {})
@@ -277,17 +312,34 @@ export function useWorkspace() {
     return action;
   }
 
+  /** P7.1：一次导入里的一个素材，先落原片，再按类型合成候选。 */
+  interface ImportedAsset {
+    asset: MediaAsset;
+    stored: StoredMedia;
+    duration?: number;
+  }
+  const MAX_IMPORT_FILES = 20;
+
   async function importFiles(files: File[]) {
     if (storageError.value) throw new Error(storageError.value);
-    if (!files.length) return { count: 0, errors: [] as string[] };
-    if (files.length > 10)
-      throw new Error("每次最多导入 10 个素材，请分批选择。");
+    if (!files.length) return { count: 0, errors: [] as string[], warnings: [] as string[] };
+    if (files.length > MAX_IMPORT_FILES)
+      throw new Error(`每次最多导入 ${MAX_IMPORT_FILES} 个文件，请分批选择。`);
     importing.value = true;
     const errors: string[] = [];
+    const warnings: string[] = [];
+    const photos: ImportedAsset[] = [];
+    const videos: ImportedAsset[] = [];
+    let skippedPhotos = 0;
     let count = 0;
     try {
       for (const [index, file] of files.entries()) {
         importProgress.value = `正在保存第 ${index + 1} / ${files.length} 个素材`;
+        // 照片合成一条候选，超过上限的只提示并跳过；视频各自成条。
+        if (mediaKindOf(file) === "image" && photos.length >= MAX_ENTRY_MEDIA) {
+          skippedPhotos++;
+          continue;
+        }
         const id = createId();
         let saved = false;
         let asset: MediaAsset | undefined;
@@ -314,21 +366,12 @@ export function useWorkspace() {
             asset.thumbnailUrl = URL.createObjectURL(info.thumbnail);
           await storeMedia(id, file, info.thumbnail);
           saved = true;
-          await update((next) => {
-            next.media.push(asset!);
-            next.candidates.push({
-              id: createId(),
-              mediaId: id,
-              title: "一个想记住的瞬间",
-              note: "",
-              capturedAt,
-              start: info.duration ? 0 : undefined,
-              end: info.duration,
-              origin: "upload",
-              status: "pending",
-            });
-          });
-          count++;
+          const item: ImportedAsset = {
+            asset,
+            stored: { id, file, thumbnail: info.thumbnail },
+            duration: info.duration,
+          };
+          (info.kind === "image" ? photos : videos).push(item);
         } catch (error) {
           if (saved) await deleteMedia(id).catch(() => {});
           if (asset) releaseUrls([asset]);
@@ -337,62 +380,182 @@ export function useWorkspace() {
           );
         }
       }
+      if (skippedPhotos)
+        warnings.push(
+          `一条记录最多 ${MAX_ENTRY_MEDIA} 张照片，已跳过超出的 ${skippedPhotos} 张；可以再导入一次。`,
+        );
+
+      const groups: ImportedAsset[][] = [
+        ...(photos.length ? [photos] : []),
+        ...videos.map((item) => [item]),
+      ];
+      for (const group of groups) {
+        try {
+          await update((next) => {
+            for (const item of group) next.media.push(item.asset);
+            next.candidates.push({
+              id: createId(),
+              mediaIds: group.map((item) => item.asset.id),
+              title:
+                group.length > 1 ? `${group.length} 张照片` : "一个想记住的瞬间",
+              note: "",
+              capturedAt: group[0]!.asset.capturedAt,
+              start: group[0]!.duration ? 0 : undefined,
+              end: group[0]!.duration,
+              origin: "upload",
+              status: "pending",
+            });
+          }, group.map((item) => item.stored));
+          count++;
+        } catch (error) {
+          await Promise.all(
+            group.map((item) => deleteMedia(item.asset.id).catch(() => {})),
+          );
+          releaseUrls(group.map((item) => item.asset));
+          errors.push(
+            `整理这批素材时出错：${error instanceof Error ? error.message : "请重试。"}`,
+          );
+        }
+      }
     } finally {
       importing.value = false;
       importProgress.value = "";
     }
-    return { count, errors };
+    return { count, errors, warnings };
   }
 
+  /** 这个素材是否还被「当前这条以外」的记录或候选引用。 */
+  function referencedElsewhere(
+    next: Workspace,
+    id: string,
+    entryId?: string,
+    candidateId?: string,
+    pendingOnly = false,
+  ): boolean {
+    return (
+      next.entries.some(
+        (item) => item.id !== entryId && (item.mediaIds ?? []).includes(id),
+      ) ||
+      next.candidates.some(
+        (item) =>
+          item.id !== candidateId &&
+          (!pendingOnly || item.status === "pending") &&
+          (item.mediaIds ?? []).includes(id),
+      )
+    );
+  }
+
+  /**
+   * 只有待整理候选和其它记录算「还在用」；已确认 / 已忽略的候选界面上看不到，
+   * 但它们仍留在 candidates 里，这里顺手清掉失效引用，孤儿回收才不会误留原片。
+   */
+  function dropUnusedMedia(
+    next: Workspace,
+    ids: string[],
+    entryId?: string,
+    candidateId?: string,
+  ): string[] {
+    const blockers = ids.filter((id) =>
+      referencedElsewhere(next, id, entryId, candidateId, true),
+    );
+    const drop = ids.filter((id) => !blockers.includes(id));
+    for (const item of next.candidates)
+      if (item.status !== "pending")
+        item.mediaIds = item.mediaIds.filter((id) => !drop.includes(id));
+    next.media = next.media.filter((item) => !drop.includes(item.id));
+    return drop;
+  }
+
+  /**
+   * P7.1：slots 是编辑弹窗给出的最终顺序，每格可以保留旧素材、补回/换图或新增。
+   * 不传 slots（例如「醒来」补记）表示不动素材。
+   */
   async function saveEntry(
     draft: EntryDraft,
     candidate?: Candidate,
     existing?: GrowthEntry,
-    upload?: PreparedMedia,
+    slots?: MediaSlotInput[],
   ) {
-    if (upload) validateMediaFile(upload.file);
+    if (slots)
+      for (const slot of slots)
+        if (slot.upload) validateMediaFile(slot.upload.file);
     const mediaFiles: StoredMedia[] = [];
-    let asset: MediaAsset | undefined;
+    const createdAssets: MediaAsset[] = [];
+    let removedIds: string[] = [];
     try {
       await update((next) => {
         const entry = existing ? next.entries.find((item) => item.id === existing.id) : undefined;
         if (existing && !entry) throw new Error("这条记录已经被删除。");
-        if (upload) {
-          const previous = next.media.find((item) => item.id === entry?.mediaId);
-          // 独占的缺失素材可以补回原 ID；共享素材换图时只修改当前记录。
-          const reusable = previous && !previous.url && !previous.demo &&
-            !next.entries.some((item) => item.id !== entry?.id && item.mediaId === previous.id) &&
-            !next.candidates.some((item) => item.status === "pending" && item.mediaId === previous.id);
-          asset = {
-            id: reusable ? previous.id : createId(),
-            kind: upload.kind,
-            name: upload.file.name,
-            mime: upload.file.type,
-            size: upload.file.size,
-            capturedAt: draft.capturedAt,
-            duration: upload.duration,
-            previewable: upload.previewable,
-            theme: previous?.theme || "sand",
-            url: URL.createObjectURL(upload.file),
-            thumbnailUrl: upload.thumbnail ? URL.createObjectURL(upload.thumbnail) : undefined,
-          };
-          next.media = next.media.filter((item) => item.id !== asset!.id);
-          next.media.push(asset);
-          mediaFiles.push({ id: asset.id, file: upload.file, thumbnail: upload.thumbnail });
+        const previousIds = entry?.mediaIds ?? candidate?.mediaIds ?? [];
+        let finalIds: string[] | undefined;
+        if (slots) {
+          if (slots.length > MAX_ENTRY_MEDIA)
+            throw new Error(`一条记录最多 ${MAX_ENTRY_MEDIA} 张照片。`);
+          finalIds = [];
+          for (const slot of slots) {
+            if (!slot.upload) {
+              if (slot.mediaId) finalIds.push(slot.mediaId);
+              continue;
+            }
+            const upload: PreparedMedia = slot.upload;
+            const previous = slot.mediaId
+              ? next.media.find((item) => item.id === slot.mediaId)
+              : undefined;
+            // 独占的缺失素材可以补回原 ID；共享素材换图时只修改当前记录。
+            const reusable =
+              previous &&
+              !previous.url &&
+              !previous.demo &&
+              !referencedElsewhere(next, previous.id, entry?.id, candidate?.id, true);
+            const id = reusable ? previous.id : createId();
+            const asset: MediaAsset = {
+              id,
+              kind: upload.kind,
+              name: upload.file.name,
+              mime: upload.file.type,
+              size: upload.file.size,
+              capturedAt: draft.capturedAt,
+              duration: upload.duration,
+              previewable: upload.previewable,
+              theme: previous?.theme || "sand",
+              url: URL.createObjectURL(upload.file),
+              thumbnailUrl: upload.thumbnail
+                ? URL.createObjectURL(upload.thumbnail)
+                : undefined,
+            };
+            next.media = next.media.filter((item) => item.id !== id);
+            next.media.push(asset);
+            mediaFiles.push({ id, file: upload.file, thumbnail: upload.thumbnail });
+            createdAssets.push(asset);
+            finalIds.push(id);
+          }
+          const resolved = [...new Set(finalIds)].slice(0, MAX_ENTRY_MEDIA);
+          finalIds = resolved;
+          // 视频仍是一条记录一个素材，start/end 只对那一个视频有意义。
+          const hasVideo = resolved.some(
+            (id) => next.media.find((item) => item.id === id)?.kind === "video",
+          );
+          if (hasVideo && resolved.length !== 1)
+            throw new Error("含视频的记录只能保留一个素材，请先移除其它照片。");
+          removedIds = previousIds.filter((id) => !resolved.includes(id));
         }
-        const mediaId = asset?.id ?? candidate?.mediaId ?? entry?.mediaId;
-        const duration = next.media.find((media) => media.id === mediaId)?.duration;
+        const ids = finalIds ?? (entry?.mediaIds ?? candidate?.mediaIds ?? []);
+        const duration =
+          ids.length === 1
+            ? next.media.find((media) => media.id === ids[0])?.duration
+            : undefined;
         const error = validateEntry(draft, duration);
         if (error) throw new Error(error);
         if (entry) {
           Object.assign(entry, draft, { title: draft.title.trim() });
-          if (asset) {
-            entry.mediaId = asset.id;
-            entry.demo = false;
+          if (finalIds) {
+            entry.mediaIds = finalIds;
+            if (createdAssets.length) entry.demo = false;
           }
         } else if (candidate) {
           const current = next.candidates.find((item) => item.id === candidate.id);
           if (!current) throw new Error("这个候选已经被移除。");
+          if (finalIds) current.mediaIds = finalIds;
           confirmCandidate(next, current, draft, createId());
         } else
           next.entries.push({
@@ -400,11 +563,15 @@ export function useWorkspace() {
             title: draft.title.trim(),
             id: createId(),
             favorite: false,
-            mediaId: asset?.id,
+            mediaIds: finalIds ?? [],
           });
+        // 只有不再被任何其它记录引用的素材才从工作区移除，原片随后由 GC 回收。
+        if (removedIds.length)
+          dropUnusedMedia(next, removedIds, entry?.id, candidate?.id);
       }, mediaFiles);
+      if (removedIds.length) await collectOrphanMedia(workspace.value);
     } catch (error) {
-      if (asset) releaseUrls([asset]);
+      releaseUrls(createdAssets);
       throw error;
     }
   }
@@ -460,24 +627,22 @@ export function useWorkspace() {
     });
   }
 
+  /** P7.1：勾选删除原片时，只删这条记录独有、没有别人引用的素材；视频与照片一视同仁。 */
   async function deleteEntry(entry: GrowthEntry, withOriginal = false) {
-    if (!withOriginal || !entry.mediaId)
+    const ids = entry.mediaIds ?? [];
+    if (!withOriginal || !ids.length)
       return update((next) => removeEntry(next, entry.id));
     const action = writes
       .catch(() => {})
       .then(async () => {
         const next: Workspace = JSON.parse(JSON.stringify(workspace.value));
-        const mediaId = entry.mediaId!;
-        const removed = next.media.filter((media) => media.id === mediaId);
-        next.entries
-          .filter((item) => item.mediaId === mediaId)
-          .forEach((item) => removeEntry(next, item.id));
-        next.media = next.media.filter((media) => media.id !== mediaId);
-        next.candidates = next.candidates.filter(
-          (item) => item.mediaId !== mediaId,
-        );
+        const beforeMedia = next.media;
+        const drop = dropUnusedMedia(next, ids, entry.id);
+        const removed = beforeMedia.filter((media) => drop.includes(media.id));
+        removeEntry(next, entry.id);
         stampChanges(workspace.value, next, deviceId());
-        await removeMediaAndWorkspace(mediaId, next);
+        if (drop.length) await removeMediaAndWorkspace(drop, next);
+        else await writeWorkspace(next);
         workspace.value = next;
         releaseUrls(removed);
         notifyPeers();
@@ -643,6 +808,7 @@ export function useWorkspace() {
     notifyPeers();
     // 清空本机也清掉家庭密钥，否则下次同步会把服务器上的记录全部拉回来。
     clearSyncConfig();
+    clearMediaProgress();
   }
 
   /** 把同步结果写回本机：走同一个写入队列，但不盖章，否则合并会被当成新修改推回去。 */
@@ -687,6 +853,17 @@ export function useWorkspace() {
         writeSince(outcome.now);
         syncState.value.lastAt = new Date().toISOString();
         syncState.value.error = "";
+        // P7.2：结构化同步成功后才传照片；服务器尚未升级或离线时不影响记录同步。
+        try {
+          const media = await syncMedia(workspace.value, config.key);
+          if (media.downloaded.length)
+            await refreshAttachedMedia(media.downloaded);
+        } catch {
+          writeMediaProgress({
+            ...readMediaProgress(),
+            error: "服务器还没有开启照片同步，记录同步不受影响。",
+          });
+        }
         return outcome;
       } catch (error) {
         syncState.value.error = error instanceof Error ? error.message : "同步失败，稍后会自动重试。";
@@ -732,6 +909,7 @@ export function useWorkspace() {
     saveProfile,
     clearDemo,
     loadDemo,
+    refreshAttachedMedia,
     deleteRecap,
     reset,
     restore,

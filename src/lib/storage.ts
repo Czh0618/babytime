@@ -15,6 +15,8 @@ export interface StoredMedia {
   id: string;
   file: Blob;
   thumbnail?: Blob;
+  /** P7.2：只从服务器拿到缩略图时，file 存的是缩略图副本，不能当原图显示。 */
+  remoteOnly?: boolean;
 }
 
 let databasePromise: Promise<IDBDatabase> | undefined;
@@ -157,9 +159,11 @@ export async function writeWorkspaceAndMedia(
   mediaFiles: StoredMedia[],
 ): Promise<void> {
   const value = snapshotWorkspace(workspace);
+  // P7.1：多图记录可能把同一素材写进多个槽，按 id 去重后再入事务。
+  const uniqueFiles = [...new Map(mediaFiles.map((item) => [item.id, item])).values()];
   const database = await openDatabase();
   const transaction = database.transaction(
-    mediaFiles.length ? [WORKSPACE_STORE, MEDIA_STORE] : WORKSPACE_STORE,
+    uniqueFiles.length ? [WORKSPACE_STORE, MEDIA_STORE] : WORKSPACE_STORE,
     "readwrite",
   );
   await completeTransaction<void>(transaction, (_resolve, reject) => {
@@ -168,7 +172,7 @@ export async function writeWorkspaceAndMedia(
       .put({ key: CURRENT_WORKSPACE_KEY, value } satisfies WorkspaceRecord);
     request.onerror = () =>
       reject(request.error ?? new Error("写入成长记录失败"));
-    for (const media of mediaFiles) {
+    for (const media of uniqueFiles) {
       if (!media.id || !(media.file instanceof Blob) || !media.file.size)
         throw new Error("素材为空或缺少标识，无法保存。");
       const mediaRequest = transaction.objectStore(MEDIA_STORE).put(media);
@@ -181,6 +185,8 @@ export async function storeMedia(
   mediaId: string,
   file: Blob,
   thumbnail?: Blob,
+  /** P7.2：只存远端缩略图时置 true，attachMedia 不会把它当原图。 */
+  remoteOnly = false,
 ): Promise<void> {
   if (!mediaId) throw new Error("素材缺少唯一标识，无法保存。");
   if (!(file instanceof Blob) || file.size === 0)
@@ -190,14 +196,14 @@ export async function storeMedia(
   await completeTransaction<void>(transaction, (_resolve, reject) => {
     const request = transaction
       .objectStore(MEDIA_STORE)
-      .put({ id: mediaId, file, thumbnail } satisfies StoredMedia);
+      .put({ id: mediaId, file, thumbnail, remoteOnly } satisfies StoredMedia);
     request.onerror = () => reject(request.error ?? new Error("写入素材失败"));
   });
 }
 
 export async function readMedia(
   mediaId: string,
-): Promise<{ file: Blob; thumbnail?: Blob } | undefined> {
+): Promise<{ file: Blob; thumbnail?: Blob; remoteOnly?: boolean } | undefined> {
   if (!mediaId) return undefined;
   const database = await openDatabase();
   return new Promise((resolve, reject) => {
@@ -208,7 +214,7 @@ export async function readMedia(
         const result = request.result as StoredMedia | undefined;
         resolve(
           result
-            ? { file: result.file, thumbnail: result.thumbnail }
+            ? { file: result.file, thumbnail: result.thumbnail, remoteOnly: result.remoteOnly }
             : undefined,
         );
       };
@@ -237,10 +243,11 @@ export async function deleteMedia(mediaId: string): Promise<void> {
  * 调用方负责先从 workspace 中移除相关领域引用；这里不修改传入对象。
  */
 export async function removeMediaAndWorkspace(
-  mediaId: string,
+  mediaIds: string[],
   workspace: Workspace,
 ): Promise<void> {
-  if (!mediaId) throw new Error("素材缺少唯一标识，无法删除。");
+  const ids = [...new Set(mediaIds)].filter(Boolean);
+  if (!ids.length) throw new Error("素材缺少唯一标识，无法删除。");
   const value = snapshotWorkspace(workspace);
   const database = await openDatabase();
   const transaction = database.transaction(
@@ -251,11 +258,13 @@ export async function removeMediaAndWorkspace(
     const workspaceRequest = transaction
       .objectStore(WORKSPACE_STORE)
       .put({ key: CURRENT_WORKSPACE_KEY, value } satisfies WorkspaceRecord);
-    const mediaRequest = transaction.objectStore(MEDIA_STORE).delete(mediaId);
     workspaceRequest.onerror = () =>
       reject(workspaceRequest.error ?? new Error("保存成长记录失败"));
-    mediaRequest.onerror = () =>
-      reject(mediaRequest.error ?? new Error("删除素材失败"));
+    for (const id of ids) {
+      const mediaRequest = transaction.objectStore(MEDIA_STORE).delete(id);
+      mediaRequest.onerror = () =>
+        reject(mediaRequest.error ?? new Error("删除素材失败"));
+    }
   });
 }
 

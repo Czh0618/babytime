@@ -6,6 +6,7 @@ import type {
   Workspace,
 } from "../types.ts";
 import { demoWorkspace } from "./seed.ts";
+import { coverMediaId } from "./media-refs.ts";
 import { MEASURE_RANGES, TEMPERATURE_MAX, TEMPERATURE_MIN } from "./care-types.ts";
 
 export function validateEntry(
@@ -101,7 +102,7 @@ export function confirmCandidate(
     (entry) => entry.candidateId === candidate.id,
   );
   if (existing) return existing;
-  const media = workspace.media.find((asset) => asset.id === candidate.mediaId);
+  const media = workspace.media.find((asset) => asset.id === coverMediaId(candidate.mediaIds));
   const error = validateEntry(draft, media?.duration);
   if (error) throw new Error(error);
   const entry: GrowthEntry = {
@@ -110,7 +111,7 @@ export function confirmCandidate(
     id,
     babyId: candidate.babyId ?? workspace.activeProfileId,
     candidateId: candidate.id,
-    mediaId: candidate.mediaId,
+    mediaIds: [...candidate.mediaIds],
     favorite: false,
     demo: candidate.origin === "demo",
   };

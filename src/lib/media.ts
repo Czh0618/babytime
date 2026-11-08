@@ -39,6 +39,11 @@ function extensionOf(name: string): string {
   return match?.[1] ?? "";
 }
 
+/** P7.1：导入时先按类型把照片归组、视频各自成条，再做昂贵的解码。 */
+export function mediaKindOf(file: File): "image" | "video" | undefined {
+  return kindForFile(file);
+}
+
 function kindForFile(file: File): "image" | "video" | undefined {
   if (file.type.startsWith("image/")) return "image";
   if (file.type.startsWith("video/")) return "video";
@@ -76,7 +81,7 @@ function loadImageElement(url: string): Promise<HTMLImageElement> {
   });
 }
 
-function createImageBitmapWithTimeout(file: File): Promise<ImageBitmap> {
+function createImageBitmapWithTimeout(file: Blob): Promise<ImageBitmap> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const timer = window.setTimeout(() => {
@@ -105,7 +110,11 @@ function createImageBitmapWithTimeout(file: File): Promise<ImageBitmap> {
   });
 }
 
-async function imageThumbnail(file: File): Promise<Blob> {
+/**
+ * 照片缩略图（最长边 960px）。P7.2 补传历史照片时会用 IndexedDB 里的 Blob 再调一次，
+ * 所以入参放宽到 Blob，不只是导入时的 File。
+ */
+export async function createImageThumbnail(file: Blob): Promise<Blob> {
   const url = URL.createObjectURL(file);
   try {
     // createImageBitmap accepts the Blob directly; the URL fallback handles older browsers.
@@ -258,7 +267,7 @@ export async function inspectMedia(file: File): Promise<{
   const kind = kindForFile(file) as "image" | "video";
   if (kind === "video") return { kind, ...(await videoInfo(file)) };
   try {
-    return { kind, thumbnail: await imageThumbnail(file), previewable: true };
+    return { kind, thumbnail: await createImageThumbnail(file), previewable: true };
   } catch {
     // Keep the original file importable for formats such as HEIC that this browser cannot decode.
     return { kind, previewable: false };

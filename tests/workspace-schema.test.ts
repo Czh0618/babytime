@@ -62,7 +62,7 @@ test("记录、候选、媒体和回顾的错误字段类型及非有限数值�
   const badFields = {
     entries: [
       { title: null }, { note: {} }, { capturedAt: undefined }, { tag: 1 },
-      { favorite: "false" }, { milestone: 1 }, { start: Infinity }, { mediaId: 1 },
+      { favorite: "false" }, { milestone: 1 }, { start: Infinity }, { mediaIds: 1 },
       { care: { kind: "feeding", sourceText: 1 } },
       { care: { kind: "unknown", sourceText: "原话" } },
       { care: { kind: "feeding", sourceText: "原话", amountMl: "80" } },
@@ -72,7 +72,7 @@ test("记录、候选、媒体和回顾的错误字段类型及非有限数值�
       { care: { kind: "diaper", sourceText: "原话", diaper: "invalid" } },
     ],
     candidates: [
-      { mediaId: undefined }, { title: [] }, { note: false }, { capturedAt: 1 },
+      { mediaIds: "m1" }, { title: [] }, { note: false }, { capturedAt: 1 },
       { origin: "unknown" }, { status: "unknown" }, { end: Infinity }, { suggestion: {} },
     ],
     media: [
@@ -110,7 +110,7 @@ test("每个列表的空 ID 和重复 ID 均被拒绝", () => {
 
 test("合法旧 JSON 保留可选照护字段，并允许缺失媒体引用稍后补回", () => {
   const workspace = workspaceWithRecap();
-  workspace.entries[0]!.mediaId = "missing-original";
+  workspace.entries[0]!.mediaIds = ["missing-original"];
   workspace.entries[0]!.care = { kind: "feeding", sourceText: "喝了 80 毫升", amountMl: 80 };
   const restored = parseBackup(JSON.stringify(workspace));
   assert.deepEqual(restored, JSON.parse(JSON.stringify(workspace)));
@@ -122,7 +122,8 @@ test("带原片的新备份封装通过严格工作区校验", () => {
   workspace.media[0]!.demo = false;
   workspace.media[0]!.size = 3;
   const mediaFiles = [{ id: workspace.media[0]!.id, dataUrl: "data:image/jpeg;base64,AQID" }];
-  const backup = parseBackupContent(JSON.stringify({ backupVersion: 1, workspace, mediaFiles }));
+  const backup = parseBackupContent(JSON.stringify({ backupVersion: 2, workspace, mediaFiles }));
+  assert.equal(backup.backupVersion, 2);
   assert.deepEqual(backup.workspace, JSON.parse(JSON.stringify(workspace)));
   assert.deepEqual(backup.mediaFiles, mediaFiles);
 });

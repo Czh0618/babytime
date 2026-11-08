@@ -19,6 +19,8 @@ export const CSV_HEADER = [
   "标签",
   "备注",
   "里程碑",
+  /** P7.1：多图只记张数，不导出素材 id 或原片。 */
+  "照片数",
 ] as const;
 
 export function buildEntriesCsv(entries: GrowthEntry[]): string {
@@ -33,6 +35,7 @@ export function buildEntriesCsv(entries: GrowthEntry[]): string {
       entry.tag,
       entry.note,
       entry.milestone ? "是" : "",
+      String((entry.mediaIds ?? []).filter((id) => Boolean(id)).length),
     ]);
   const lines = [Array.from(CSV_HEADER), ...rows].map((row) =>
     row.map(escapeCell).join(","),

@@ -1,6 +1,7 @@
 import type { BabyProfile, Workspace } from "../types.ts";
 import { activeProfileOf } from "./profiles.ts";
 import { removeEntry } from "./records.ts";
+import { normalizeMediaIds } from "./workspace-schema.ts";
 import { LIST_KINDS, lists, type ListKind, type SyncItem } from "./sync-meta.ts";
 
 /** 线上格式，与 server/sync.ts 对应。 */
@@ -26,13 +27,20 @@ export interface PushBatch {
   sent: Record<string, string>;
 }
 
-/** 对象 URL 只属于当前页面，永远不上传。 */
+/**
+ * 对象 URL 只属于当前页面，永远不上传。
+ * P7.1：旧设备 / 空白记录没有 mediaIds，推送与指纹都统一补空数组，
+ * 否则「B 合并后补了字段、A 没补」会被当成内容变化来回推。
+ */
 function stripLocal(item: SyncItem): Record<string, unknown> {
-  const { url: _url, thumbnailUrl: _thumb, ...rest } = item as SyncItem & {
+  const { url: _url, thumbnailUrl: _thumb, mediaId: _legacy, ...rest } = item as SyncItem & {
     url?: string;
     thumbnailUrl?: string;
+    mediaId?: string;
   };
-  return rest;
+  const value = { ...rest } as Record<string, unknown>;
+  if ("tag" in value && !("mediaIds" in value)) value.mediaIds = [];
+  return value;
 }
 
 function findItem(workspace: Workspace, kind: ListKind, id: string) {
@@ -92,6 +100,20 @@ function removeItem(workspace: Workspace, kind: ListKind, id: string) {
 function dropDirty(workspace: Workspace, keys: Iterable<string>) {
   const gone = new Set(keys);
   workspace.syncDirty = (workspace.syncDirty ?? []).filter((key) => !gone.has(key));
+}
+
+/**
+ * P7.1：旧设备推上来的 entry 仍带 `mediaId`。合入前归一成 `mediaIds`，
+ * 否则本机列表里会出现新旧两种结构；这里不改服务端存储，旧设备仍可继续同步。
+ */
+function migratePulledRecord(row: SyncRecord): SyncRecord {
+  if (row.kind !== "entry" || !row.payload) return row;
+  const payload = { ...row.payload } as Record<string, unknown>;
+  payload.mediaIds = normalizeMediaIds(
+    payload.mediaIds ?? (typeof payload.mediaId === "string" ? [payload.mediaId] : []),
+  );
+  delete payload.mediaId;
+  return { ...row, payload };
 }
 
 /**
@@ -158,7 +180,8 @@ export function applyPull(workspace: Workspace, pull: PullResult) {
   let removed = 0;
   let changed = 0;
   workspace.vaccinations ??= [];
-  for (const row of pull.records) {
+  for (const pulled of pull.records) {
+    const row = migratePulledRecord(pulled);
     if (!(LIST_KINDS as string[]).includes(row.kind)) continue;
     const key = `${row.kind}:${row.id}`;
     const local = findItem(workspace, row.kind, row.id);

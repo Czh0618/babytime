@@ -20,6 +20,7 @@ import { dayAge, localDate } from "../domain/date";
 import { validateProfile } from "../domain/profile";
 import { aiStatus } from "../lib/ai-service";
 import { syncState } from "../lib/sync-service";
+import { mediaSyncState } from "../lib/media-sync";
 import { describePersistence, persistenceStatus } from "../lib/persistence";
 import { isIOS, isStandalone, migrationCopy } from "../domain/pwa";
 import type { ThemePreference } from "../domain/night";
@@ -109,14 +110,15 @@ const syncLabel = computed(() =>
 const syncDescription = computed(() => {
   const state = syncState.value;
   if (!state.configured)
-    return "默认只存在这台设备。开启后，成长记录等结构化内容会存到你自己的服务器，家人的设备可以一起看、一起记；照片视频原片不上传。";
+    return "默认只存在这台设备。开启后，成长记录会存到你自己的服务器，照片与缩略图也会存到服务器，视频只存本机；家人的设备可以一起看、一起记。";
   if (state.running) return "正在同步…";
   if (state.error) return state.error;
   if (!state.enabled) return "已暂停，本机记录照常保存，服务器上的数据保留。";
   return state.lastAt
-    ? `上次同步：${new Date(state.lastAt).toLocaleString()}。结构化记录存在你自己的服务器上，原片只留在拍摄的设备。`
-    : "已开启。结构化记录存在你自己的服务器上，原片只留在拍摄的设备。";
+    ? `上次同步：${new Date(state.lastAt).toLocaleString()}。照片和缩略图存到你自己的服务器，视频只存本机；本机已有的原片永远优先。`
+    : "已开启。照片和缩略图会存到你自己的服务器，视频只存本机。";
 });
+const mediaPending = computed(() => mediaSyncState.value.pending.length);
 
 function changeTheme(event: Event) {
   setThemePreference(
@@ -325,7 +327,7 @@ function clearData() {
           <div>
             <strong>只保存在这台设备</strong>
             <p class="muted">
-              当前版本保存在本机浏览器中，不会自动上传到云端。
+              没开启同步时，记录、照片和视频都只留在本机浏览器；开启后也只有你自己服务器会收到记录与照片。
             </p>
           </div>
           <span class="pill">{{ storageLabel }}</span>
@@ -378,6 +380,16 @@ function clearData() {
           <div>
             <strong>多设备同步</strong>
             <p class="muted">{{ syncDescription }}</p>
+            <p v-if="syncState.configured && syncState.enabled" class="muted media-sync-line">
+              <template v-if="mediaPending">
+                待上传照片 {{ mediaPending }} 张（含升级前导入的），会一张一张传，失败下次同步自动重试。
+              </template>
+              <template v-else-if="mediaSyncState.error">{{ mediaSyncState.error }}</template>
+              <template v-else>照片已全部传到你自己的服务器；视频仍只留在本机。</template>
+              <template v-if="mediaSyncState.oversized">
+                另有 {{ mediaSyncState.oversized }} 张超过 20 MB，服务器不接收，只留在本机。
+              </template>
+            </p>
           </div>
           <div class="ai-setting-actions">
             <span class="pill">{{ syncLabel }}</span>
@@ -426,8 +438,8 @@ function clearData() {
             <p class="muted">
               {{
                 syncState.enabled
-                  ? "这台设备和填了同一家庭密钥的设备，以及能登录你服务器的人。结构化记录会存到你自己的服务器，照片视频原片不上传；没有邀请或公开分享功能。"
-                  : "只有这台设备。开启多设备同步后，结构化记录会存到你自己的服务器；照片视频原片始终不上传。没有邀请或公开分享功能。"
+                  ? "这台设备和填了同一家庭密钥的设备，以及能登录你服务器的人。成长记录、照片与缩略图存在你自己的服务器，视频只存本机；没有邀请或公开分享功能。"
+                  : "只有这台设备。开启多设备同步后，成长记录、照片与缩略图会存到你自己的服务器，视频仍只存本机。没有邀请或公开分享功能。"
               }}
             </p>
           </div>
@@ -692,6 +704,11 @@ function clearData() {
   margin: 10px 0 0;
   padding-left: 20px;
   font-size: 13px;
+  line-height: 1.7;
+}
+.media-sync-line {
+  margin-top: 6px;
+  font-size: var(--font-xs);
   line-height: 1.7;
 }
 .migration-card .muted {

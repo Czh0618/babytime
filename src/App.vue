@@ -26,6 +26,7 @@ import VoiceEntryCard from "./components/VoiceEntryCard.vue";
 import AiSettingsDialog from "./components/AiSettingsDialog.vue";
 import SyncSettingsDialog from "./components/SyncSettingsDialog.vue";
 import { refreshSyncState } from "./lib/sync-service";
+import { refreshMediaSyncState } from "./lib/media-sync";
 import BackupReminder from "./components/BackupReminder.vue";
 import QuickLogCard from "./components/QuickLogCard.vue";
 import FirstRunGuide from "./components/FirstRunGuide.vue";
@@ -83,13 +84,13 @@ import { findAnniversary } from "./domain/anniversary";
 import { buildHandoffSummary } from "./domain/handoff";
 import { isNightTime } from "./domain/night";
 import { exportLegacyRecords, exportRecap, exportRecords } from "./lib/export";
-import type { PreparedMedia } from "./lib/media";
 import type {
   BabyProfile,
   Candidate,
   EntryDraft,
   GrowthEntry,
   MediaAsset,
+  MediaSlotInput,
   Recap,
   RecapDraft,
   Tab,
@@ -158,6 +159,7 @@ const notice = ref("");
 const failed = ref(false);
 const formError = ref("");
 const importErrors = ref<string[]>([]);
+const importWarnings = ref<string[]>([]);
 const originalChoice = ref(false);
 const suggestingId = ref("");
 const aiReady = computed(() => aiAvailable());
@@ -463,6 +465,13 @@ function mediaFor(id?: string): MediaAsset | undefined {
   return workspace.value.media.find((media) => media.id === id);
 }
 
+/** P7.1：按记录里的顺序取回全部素材，第一张是封面。 */
+function mediaListFor(ids?: string[]): MediaAsset[] {
+  return (ids ?? [])
+    .map((id) => workspace.value.media.find((media) => media.id === id))
+    .filter((item): item is MediaAsset => Boolean(item));
+}
+
 /** 手动或开启后同步一轮；结果用一句话告诉家长，失败不影响本机记录。 */
 async function syncNow(manual = false) {
   try {
@@ -489,7 +498,7 @@ function openAiSettings() {
 /** 给待整理候选生成文案建议：只发送文字元信息，结果仍等家长确认。 */
 async function suggestCaption(candidate: Candidate, hint: string) {
   if (suggestingId.value) return;
-  const media = mediaFor(candidate.mediaId);
+  const media = mediaFor(candidate.mediaIds[0]);
   suggestingId.value = candidate.id;
   operations.value++;
   try {
@@ -516,9 +525,11 @@ async function suggestCaption(candidate: Candidate, hint: string) {
 
 async function importFiles(files: File[]) {
   importErrors.value = [];
+  importWarnings.value = [];
   try {
     const result = await model.importFiles(files);
     importErrors.value = result.errors;
+    importWarnings.value = result.warnings;
     if (result.count) {
       navigate("inbox");
       say(`已在本机保存 ${result.count} 个素材，等你来整理。`);
@@ -532,12 +543,12 @@ async function importFiles(files: File[]) {
   }
 }
 
-async function saveEntry(draft: EntryDraft, upload?: PreparedMedia) {
+async function saveEntry(draft: EntryDraft, slots: MediaSlotInput[]) {
   const current = overlay.value;
   if (current?.kind !== "editor") return;
   if (
     await perform(
-      () => model.saveEntry(draft, current.candidate, current.entry, upload),
+      () => model.saveEntry(draft, current.candidate, current.entry, slots),
       "已收进成长时光，你的修改已保留。",
     )
   ) {
@@ -575,8 +586,8 @@ function askDelete(entry: GrowthEntry) {
     kind: "confirm",
     title: "删除这条成长记录？",
     description:
-      "删除后会从时间轴和引用它的回顾中移除。默认保留原片；也可以一并删除这段素材及相关记录。",
-    originalOption: Boolean(entry.mediaId),
+      "删除后会从时间轴和引用它的回顾中移除。默认保留原片；也可以只删掉这条记录独有的原片，其它记录还在用的会保留。",
+    originalOption: Boolean(entry.mediaIds?.length),
     action: () => model.deleteEntry(entry, originalChoice.value),
   };
 }
@@ -769,6 +780,7 @@ onMounted(() => {
   window.addEventListener("hashchange", onHashChange);
   refreshAIStatus();
   refreshSyncState();
+  refreshMediaSyncState();
   initializePersistenceStatus();
   refreshBackupState();
   document.addEventListener("visibilitychange", refreshNight);
@@ -1034,6 +1046,7 @@ onBeforeUnmount(() => {
       :busy="busy"
       :progress="importProgress"
       :errors="importErrors"
+      :warnings="importWarnings"
       @close="overlay = null"
       @import="importFiles"
       @manual="overlay = { kind: 'editor' }"
@@ -1060,7 +1073,7 @@ onBeforeUnmount(() => {
       :candidate="overlay.candidate"
       :entry="overlay.entry"
       :initial-draft="overlay.initialDraft"
-      :media="mediaFor(overlay.candidate?.mediaId || overlay.entry?.mediaId)"
+      :media="mediaListFor(overlay.candidate?.mediaIds || overlay.entry?.mediaIds)"
       :busy="busy"
       :save-error="formError"
       @close="overlay = null"
@@ -1069,7 +1082,7 @@ onBeforeUnmount(() => {
     <EntryDetail
       v-if="overlay?.kind === 'detail' && detail"
       :entry="detail"
-      :media="mediaFor(detail.mediaId)"
+      :media="mediaListFor(detail.mediaIds)"
       :busy="busy"
       @close="overlay = null"
       @edit="
@@ -1102,7 +1115,7 @@ onBeforeUnmount(() => {
         ><input
           v-model="originalChoice"
           type="checkbox"
-        />同时删除原片与关联记录</label
+        />同时删除这条记录独有的原片</label
       >
       <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
       <div class="confirm-actions">

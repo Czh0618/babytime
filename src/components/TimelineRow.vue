@@ -12,7 +12,12 @@ const emit = defineEmits<{ open: [entry: GrowthEntry]; favorite: [id: string] }>
 <template>
   <article class="entry-row">
     <button class="entry-main" type="button" @click="emit('open', entry)">
-      <MediaTile :media="media" variant="thumb" :label="entry.title" />
+      <MediaTile
+        :media="media"
+        variant="thumb"
+        :label="entry.title"
+        :count="entry.mediaIds?.length ?? 0"
+      />
       <span class="entry-copy">
         <strong>{{ entry.title }}</strong>
         <span class="muted">{{ formatTime(entry.capturedAt) }}</span>

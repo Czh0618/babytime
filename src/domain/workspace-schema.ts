@@ -1,3 +1,4 @@
+import { MAX_ENTRY_MEDIA } from "../types.ts";
 import type { BabyProfile, StoredWorkspace, Workspace } from "../types";
 
 export interface BackupMediaFile {
@@ -7,10 +8,50 @@ export interface BackupMediaFile {
 }
 
 export interface WorkspaceBackup {
-  backupVersion: 1;
+  /** P7.1：2 = 多图（mediaIds）；1 = 旧的单图备份，读入时迁移。 */
+  backupVersion: 2;
   workspace: StoredWorkspace;
   mediaFiles: BackupMediaFile[];
 }
+
+/** 去重、去空、截断到上限；旧数据 / 同步 payload / 外部导入都走这里。 */
+export function normalizeMediaIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const ids = value.filter(
+    (id): id is string =>
+      typeof id === "string" && id.length > 0 && id.length <= 200,
+  );
+  return [...new Set(ids)].slice(0, MAX_ENTRY_MEDIA);
+}
+
+/**
+ * P7.1 单向迁移：旧 `mediaId: "x"` → `mediaIds: ["x"]`，并删除旧字段。
+ * 幂等；本机读取、备份恢复、同步合并三条入口都要先调用它。
+ */
+export function migrateMediaIds<T extends StoredWorkspace>(workspace: T): T {
+  const lists = [workspace.entries, workspace.candidates] as unknown as Array<
+    Array<Record<string, unknown>>
+  >;
+  for (const list of lists)
+    for (const item of list) {
+      if (!("mediaIds" in item)) {
+        const legacy = item.mediaId;
+        item.mediaIds =
+          typeof legacy === "string" && legacy ? [legacy] : [];
+      } else if (Array.isArray(item.mediaIds))
+        item.mediaIds = normalizeMediaIds(item.mediaIds);
+      // 已经是 mediaIds 但类型不对时原样保留，交给严格校验拒绝，别悄悄吞掉数据。
+      delete item.mediaId;
+    }
+  return workspace;
+}
+
+/** 备份 / 同步合入后的严格校验：列表必须是字符串数组且不超过上限。 */
+const validMediaIds = (value: unknown): boolean =>
+  Array.isArray(value) &&
+  value.length <= MAX_ENTRY_MEDIA &&
+  new Set(value).size === value.length &&
+  value.every((id) => typeof id === "string" && id.length > 0 && id.length <= 200);
 
 const hasIds = (value: unknown) =>
   Array.isArray(value) &&
@@ -208,11 +249,11 @@ function validBackupWorkspace(workspace: StoredWorkspace): boolean {
       typeof item.title === "string" && typeof item.note === "string" &&
       typeof item.capturedAt === "string" && typeof item.tag === "string" &&
       typeof item.favorite === "boolean" && typeof item.milestone === "boolean" &&
-      optionalString(item.mediaId) && optionalString(item.candidateId) &&
+      validMediaIds(item.mediaIds ?? []) && optionalString(item.candidateId) &&
       optionalString(item.activityId) && optionalBoolean(item.demo) &&
       optionalNumber(item.start) && optionalNumber(item.end) && validCare(item.care)) &&
     validItems(workspace.candidates, (item) =>
-      typeof item.mediaId === "string" && typeof item.title === "string" &&
+      validMediaIds(item.mediaIds) && typeof item.title === "string" &&
       typeof item.note === "string" && typeof item.capturedAt === "string" &&
       ["demo", "upload"].includes(item.origin) &&
       ["pending", "confirmed", "dismissed"].includes(item.status) &&
@@ -269,7 +310,7 @@ export function parseBackupContent(text: string): WorkspaceBackup {
   if (isWorkspace(data)) workspace = data;
   else if (
     data && typeof data === "object" &&
-    "backupVersion" in data && data.backupVersion === 1 &&
+    "backupVersion" in data && (data.backupVersion === 1 || data.backupVersion === 2) &&
     "workspace" in data && isWorkspace(data.workspace) &&
     "mediaFiles" in data && Array.isArray(data.mediaFiles)
   ) {
@@ -286,11 +327,13 @@ export function parseBackupContent(text: string): WorkspaceBackup {
     }
   } else
     throw new Error("备份文件格式不兼容，当前记录未被修改。");
+  // P7.1：旧备份 / 旧工作区里的单图字段在这里统一归一，之后按新结构严格校验。
+  migrateMediaIds(workspace);
   if (!validBackupWorkspace(workspace))
     throw new Error("备份文件字段缺失、类型错误或标识重复，当前记录未被修改。");
   // 对象 URL 只属于导出时的页面，不能跨设备使用，也不信任备份里的外部地址。
   workspace.media = workspace.media.map(({ url: _url, thumbnailUrl: _thumbnail, ...item }) => item);
-  return { backupVersion: 1, workspace, mediaFiles };
+  return { backupVersion: 2, workspace, mediaFiles };
 }
 
 export function parseBackup(text: string): StoredWorkspace {

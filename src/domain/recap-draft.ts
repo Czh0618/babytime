@@ -45,7 +45,7 @@ export function suggestMonthlyRecap(
       : [
           ...picked,
           ...inRange.filter(
-            (entry) => !picked.includes(entry) && Boolean(entry.mediaId),
+            (entry) => !picked.includes(entry) && Boolean(entry.mediaIds?.length),
           ),
         ];
   if (!pool.length) return null;

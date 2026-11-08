@@ -37,10 +37,11 @@ const ordered = computed(() =>
     </div>
     <article v-for="entry in ordered" :key="entry.id" class="recap-moment">
       <MediaTile
-        v-if="entry.mediaId"
-        :media="media.find((item) => item.id === entry.mediaId)"
+        v-if="entry.mediaIds?.length"
+        :media="media.find((item) => item.id === entry.mediaIds![0])"
         variant="wide"
         :label="entry.title"
+        :count="entry.mediaIds.length"
         zoomable
       />
       <p class="eyebrow">

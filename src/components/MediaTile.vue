@@ -3,6 +3,7 @@ import { Image as ImageIcon, Film, NotebookPen } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import type { MediaAsset } from "../types";
 import { durationLabel } from "../domain/date";
+import { resolvedOriginalUrl } from "../lib/media-sync";
 import PhotoZoom from "./PhotoZoom.vue";
 
 const props = withDefaults(
@@ -10,17 +11,26 @@ const props = withDefaults(
     media?: MediaAsset;
     variant?: "thumb" | "cover" | "wide";
     label?: string;
+    /** P7.1：多图记录只显示封面，角标显示还有几张。 */
+    count?: number;
     /** 点开看大图；本身在按钮里的缩略图（如今天列表）不要开，避免按钮嵌套。 */
     zoomable?: boolean;
   }>(),
-  { variant: "thumb", label: "" },
+  { variant: "thumb", label: "", count: 0 },
 );
 const failed = ref(false);
-// 能直接显示的原图：示例素材没有 url，浏览器解不了的格式 previewable 为 false。
+// 能直接显示的原图：示例素材没有 url，浏览器解不了的格式 previewable 为 false；
+// P7.2 按需取回的原片地址也存在这里，取回后自动切换。
 const photoUrl = computed(() =>
   props.media?.kind === "image" && props.media.previewable !== false
-    ? props.media.url
+    ? props.media.url ?? resolvedOriginalUrl(props.media.id)
     : undefined,
+);
+const canZoom = computed(
+  () =>
+    Boolean(props.zoomable) &&
+    props.media?.kind === "image" &&
+    Boolean(photoUrl.value || props.media?.thumbnailUrl),
 );
 watch(
   () => props.media?.id,
@@ -69,9 +79,13 @@ watch(
     <span v-if="media?.demo && variant !== 'thumb'" class="media-demo"
       >画面示意</span
     >
+    <span v-if="count > 1" class="media-count" :aria-label="`还有 ${count - 1} 张照片`"
+      >+{{ count - 1 }}</span
+    >
     <PhotoZoom
-      v-if="zoomable && photoUrl"
-      :src="photoUrl"
+      v-if="canZoom"
+      :src="photoUrl || media?.thumbnailUrl || ''"
+      :media="media"
       :label="label || media?.name"
     />
   </div>
@@ -158,5 +172,17 @@ watch(
   top: 10px;
   font-size: var(--font-xs);
   opacity: 0.7;
+}
+.media-count {
+  position: absolute;
+  left: 9px;
+  bottom: 9px;
+  padding: 3px 8px;
+  border-radius: 7px;
+  color: #fff;
+  background: #302820cc;
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
 }
 </style>

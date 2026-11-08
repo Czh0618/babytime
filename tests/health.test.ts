@@ -11,7 +11,7 @@ import {
   lastMedicineEntry,
   summarizeTemperature,
 } from "../src/domain/care-records.ts";
-import { isWorkspace, parseBackup } from "../src/domain/workspace-schema.ts";
+import { isWorkspace, migrateMediaIds, parseBackup } from "../src/domain/workspace-schema.ts";
 import { emptyWorkspace } from "../src/domain/seed.ts";
 import type { GrowthEntry } from "../src/types.ts";
 import type { CareObservation } from "../src/domain/care-types.ts";
@@ -192,7 +192,7 @@ test("备份校验接受体温与用药记录", () => {
   assert.equal(isWorkspace(structuredClone(workspace)), true);
   assert.deepEqual(
     parseBackup(JSON.stringify(workspace)),
-    JSON.parse(JSON.stringify(workspace)),
+    migrateMediaIds(JSON.parse(JSON.stringify(workspace))),
   );
 
   const broken = structuredClone(workspace);

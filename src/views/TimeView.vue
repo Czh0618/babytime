@@ -78,8 +78,11 @@ const monthLabel = computed(() => {
   return `${new Intl.DateTimeFormat("zh-CN", { month: "long" }).format(now)} · ${now.getFullYear()}`;
 });
 
+/** P7.1：时间线只显示封面，多图由 MediaTile 的「+N」角标提示。 */
 function mediaFor(entry: GrowthEntry) {
-  return entry.mediaId ? mediaById.value.get(entry.mediaId) : undefined;
+  return entry.mediaIds?.[0]
+    ? mediaById.value.get(entry.mediaIds[0])
+    : undefined;
 }
 
 function openEntry(entry: GrowthEntry) {

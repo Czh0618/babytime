@@ -33,6 +33,11 @@ const hasDemo = computed(() =>
   pending.value.some((candidate) => candidate.origin === "demo"),
 );
 
+/** P7.1：列表只显示封面，多图用「+N」角标；视频候选只有一个素材。 */
+function cover(candidate: Candidate): MediaAsset | undefined {
+  return mediaById.value.get(candidate.mediaIds[0] ?? "");
+}
+
 function isDemo(candidate: Candidate) {
   return candidate.origin === "demo";
 }
@@ -72,9 +77,10 @@ function suggestion(candidate: Candidate) {
         class="candidate-card"
       >
         <MediaTile
-          :media="mediaById.get(candidate.mediaId)"
+          :media="cover(candidate)"
           variant="cover"
           :label="candidate.title"
+          :count="candidate.mediaIds.length"
           zoomable
         />
         <div class="candidate-meta">
@@ -96,12 +102,14 @@ function suggestion(candidate: Candidate) {
           <p class="candidate-source">
             <span
               >来源：{{
-                mediaById.get(candidate.mediaId)?.name ?? "原始素材"
-              }}</span
+                cover(candidate)?.name ?? "原始素材"
+              }}<template v-if="candidate.mediaIds.length > 1">
+                · 共 {{ candidate.mediaIds.length }} 张</template
+              ></span
             >
             <template
               v-if="
-                mediaById.get(candidate.mediaId)?.kind === 'video' &&
+                cover(candidate)?.kind === 'video' &&
                 candidate.start !== undefined &&
                 candidate.end !== undefined
               "

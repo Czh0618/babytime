@@ -1,7 +1,11 @@
 import type { CareObservation } from "./domain/care-types";
+import type { PreparedMedia } from "./lib/media";
 
 export type Tab = "time" | "health" | "inbox" | "recap" | "family";
 export type MediaTheme = "sand" | "sage" | "rose";
+
+/** P7.1：一条记录最多 9 张照片，第一张是封面；含视频时只能是 1 个素材。 */
+export const MAX_ENTRY_MEDIA = 9;
 
 export interface BabyProfile {
   /** 稳定标识（P5）；旧数据迁移时补上。 */
@@ -64,7 +68,8 @@ export interface MediaAsset extends SyncMeta {
 export interface Candidate {
   id: string;
   babyId?: string;
-  mediaId: string;
+  /** P7.1：顺序即展示顺序；视频候选只有 1 个素材。 */
+  mediaIds: string[];
   title: string;
   suggestion?: string;
   note: string;
@@ -90,10 +95,20 @@ export interface EntryDraft {
 export interface GrowthEntry extends EntryDraft, SyncMeta {
   id: string;
   babyId?: string;
-  mediaId?: string;
+  /** P7.1：旧数据里的 mediaId 在读入时迁移成单元素数组。 */
+  mediaIds?: string[];
   candidateId?: string;
   favorite: boolean;
   demo?: boolean;
+}
+
+/**
+ * 编辑弹窗交给工作区的一格素材：已有素材保留 id，新增或补回时带上本机文件。
+ * 顺序即最终 mediaIds 的顺序。
+ */
+export interface MediaSlotInput {
+  mediaId?: string;
+  upload?: PreparedMedia;
 }
 
 export interface RecapDraft {

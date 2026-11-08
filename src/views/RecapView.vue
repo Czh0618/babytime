@@ -197,9 +197,10 @@ watch(
   { deep: true },
 );
 
+/** P7.1：勾选列表只显示封面，多图用角标提示。 */
 function mediaFor(entry?: GrowthEntry) {
-  return entry?.mediaId
-    ? props.media.find((asset) => asset.id === entry.mediaId)
+  return entry?.mediaIds?.[0]
+    ? props.media.find((asset) => asset.id === entry.mediaIds![0])
     : undefined;
 }
 
@@ -403,6 +404,7 @@ function createRecap() {
             :media="mediaFor(entry)"
             variant="thumb"
             :label="entry.title"
+            :count="entry.mediaIds?.length ?? 0"
           />
           <span class="selection-copy"
             ><strong>{{ entry.title }}</strong
