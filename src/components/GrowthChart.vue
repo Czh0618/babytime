@@ -65,6 +65,22 @@ const bounds = computed(() => {
   return { min: min - span * 0.15, max: max + span * 0.15 };
 });
 
+/** 在上下界之间取 4 个刻度，保留 1 位小数并去重（范围很窄时可能重合）。 */
+const yTicks = computed(() => {
+  const { min, max } = bounds.value;
+  return [
+    ...new Set([0, 1, 2, 3].map((i) => round(min + ((max - min) * i) / 3))),
+  ];
+});
+
+/** 横轴按 1/2/3/6/12 月选步长，刻度不超过 7 个，避免 375px 下文字挤在一起。 */
+const xTicks = computed(() => {
+  const step = [1, 2, 3, 6, 12].find((s) => xMax.value / s <= 6) ?? 24;
+  const ticks: number[] = [];
+  for (let m = 0; m <= xMax.value; m += step) ticks.push(m);
+  return ticks;
+});
+
 function x(months: number) {
   const width = WIDTH - PAD.left - PAD.right;
   return PAD.left + (months / xMax.value) * width;
@@ -119,17 +135,18 @@ function round(value: number) {
       role="img"
       :aria-label="`${label}随月龄变化的折线图，共 ${points.length} 个记录点${reference.length ? '，附国标百分位参考线' : ''}`"
     >
-      <text :x="PAD.left - 4" :y="PAD.top + 6" class="y-tick" text-anchor="end">
-        {{ round(bounds.max) }}
-      </text>
-      <text
-        :x="PAD.left - 4"
-        :y="HEIGHT - PAD.bottom"
-        class="y-tick"
-        text-anchor="end"
-      >
-        {{ round(bounds.min) }}
-      </text>
+      <template v-for="tick in yTicks" :key="tick">
+        <line
+          :x1="PAD.left"
+          :x2="WIDTH - PAD.right"
+          :y1="y(tick)"
+          :y2="y(tick)"
+          class="grid"
+        />
+        <text :x="PAD.left - 4" :y="y(tick) + 3" class="tick" text-anchor="end">
+          {{ tick }}
+        </text>
+      </template>
       <line
         :x1="PAD.left"
         :x2="WIDTH - PAD.right"
@@ -144,6 +161,16 @@ function round(value: number) {
         :y2="HEIGHT - PAD.bottom"
         class="axis"
       />
+      <text
+        v-for="month in xTicks"
+        :key="month"
+        :x="x(month)"
+        :y="HEIGHT - PAD.bottom + 13"
+        class="tick"
+        text-anchor="middle"
+      >
+        {{ month }}月
+      </text>
       <path
         v-for="line in reference"
         :key="line.percentile"
@@ -158,13 +185,18 @@ function round(value: number) {
         :cy="y(point.value)"
         :r="idx === activeIdx ? 4.8 : 3.4"
         class="dot"
+      />
+      <!-- 透明大圆只负责接收点击，手机上可见的小圆点太难点中 -->
+      <circle
+        v-for="(point, idx) in points"
+        :key="`hit-${point.date}`"
+        :cx="x(point.months)"
+        :cy="y(point.value)"
+        r="14"
+        class="hit"
         @click="selectedIndex = idx"
       />
     </svg>
-    <div class="axis-labels">
-      <span>0 月</span>
-      <span>{{ round(xMax) }} 月</span>
-    </div>
     <p v-if="reference.length" class="chart-legend">
       虚线为 WS/T 423—2022 的 P3 / P25 / P50 / P75 / P97 参考线（按{{
         sex === "female" ? "女童" : "男童"
@@ -230,21 +262,24 @@ svg {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.grid {
+  stroke: var(--line);
+  stroke-width: 0.5;
+  opacity: 0.6;
+}
 .dot {
   fill: var(--accent);
   stroke: var(--surface);
   stroke-width: 1.5;
+  pointer-events: none;
+}
+.hit {
+  fill: transparent;
   cursor: pointer;
 }
-.y-tick {
+.tick {
   fill: var(--muted);
   font-size: 9px;
-}
-.axis-labels {
-  display: flex;
-  justify-content: space-between;
-  color: var(--muted);
-  font-size: 11px;
 }
 .chart-legend,
 .chart-last {
