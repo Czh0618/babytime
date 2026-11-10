@@ -7,7 +7,13 @@ import type {
 } from "../types.ts";
 import { demoWorkspace } from "./seed.ts";
 import { coverMediaId } from "./media-refs.ts";
-import { MEASURE_RANGES, TEMPERATURE_MAX, TEMPERATURE_MIN } from "./care-types.ts";
+import {
+  MEASURE_DECIMALS,
+  MEASURE_RANGES,
+  TEMPERATURE_MAX,
+  TEMPERATURE_MIN,
+  hasMeasurePrecision,
+} from "./care-types.ts";
 
 export function validateEntry(
   draft: EntryDraft,
@@ -69,6 +75,8 @@ export function validateEntry(
         if (value === undefined) continue;
         if (!Number.isFinite(value) || value < range.min || value > range.max)
           return `${range.label}需要在 ${range.min}–${range.max}${range.unit} 之间，请核对。`;
+        if (!hasMeasurePrecision(value))
+          return `${range.label}最多保留 ${MEASURE_DECIMALS} 位小数，请核对。`;
       }
     }
   }

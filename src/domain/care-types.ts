@@ -89,6 +89,22 @@ export const MEASURE_RANGES = {
   headCm: { min: 20, max: 60, label: "头围", unit: "cm" },
 } as const;
 
+/** 体重、身高/身长、头围最多保留两位小数；界面 step 与数据校验共用。 */
+export const MEASURE_DECIMALS = 2;
+
+/** 语音或 AI 给出的更多位小数收敛到两位，避免草稿在界面上被原生校验拦住。 */
+export function roundMeasure(value: number): number {
+  const factor = 10 ** MEASURE_DECIMALS;
+  return Math.round(value * factor) / factor;
+}
+
+/** 是否没有超过两位小数；容差用于避开浮点乘法误差。 */
+export function hasMeasurePrecision(value: number): boolean {
+  if (!Number.isFinite(value)) return false;
+  const scaled = value * 10 ** MEASURE_DECIMALS;
+  return Math.abs(scaled - Math.round(scaled)) < 1e-6;
+}
+
 export interface CareObservation extends CareFields {
   kind: CareKind;
   amountMl?: number;

@@ -162,6 +162,42 @@ test("不足一分钟和时钟回拨都按 1 分钟记，不会生成 0", () => 
   assert.equal(draft.leftMinutes, 1);
 });
 
+test("当前分钟的任意秒开始计时，都从 00:00 起算", () => {
+  const started = at("2026-11-07T14:18:32");
+  const timer = startTimer(started, "left", "b1");
+  // 记录时间仍按分钟，但计时起点精确到毫秒。
+  assert.equal(timer.segmentAt, "2026-11-07T14:18");
+  assert.equal(elapsedSeconds(timer, started), 0);
+  assert.equal(formatClock(elapsedSeconds(timer, started)), "00:00");
+  assert.equal(elapsedSeconds(timer, at("2026-11-07T14:18:33")), 1);
+
+  // 写入再读出不会跳到 32 秒，换边后同样从 0 开始。
+  const restored = parseActiveTimer(JSON.stringify(timer))!;
+  assert.equal(elapsedSeconds(restored, at("2026-11-07T14:19:02")), 30);
+  const switched = switchTimerSide(restored, "right", at("2026-11-07T14:20:45"));
+  assert.equal(elapsedSeconds(switched, at("2026-11-07T14:20:45")), 0);
+  assert.equal(
+    formatClock(elapsedSeconds(switched, at("2026-11-07T14:20:46"))),
+    "00:01",
+  );
+});
+
+test("旧计时状态仍可恢复，损坏的精确起点被忽略", () => {
+  const legacy = {
+    kind: "feeding",
+    startedAt: "2026-11-07T14:18",
+    segmentAt: "2026-11-07T14:18",
+    side: "left",
+  };
+  const timer = parseActiveTimer(JSON.stringify(legacy))!;
+  assert.equal(timer.segmentStartedMs, undefined);
+  assert.equal(elapsedSeconds(timer, at("2026-11-07T14:19:00")), 60);
+  const broken = parseActiveTimer(
+    JSON.stringify({ ...legacy, segmentStartedMs: "oops" }),
+  )!;
+  assert.equal(broken.segmentStartedMs, undefined);
+});
+
 test("计时显示格式", () => {
   assert.equal(formatClock(0), "00:00");
   assert.equal(formatClock(75), "01:15");

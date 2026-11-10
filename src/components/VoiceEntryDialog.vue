@@ -860,7 +860,7 @@ onBeforeUnmount(() => {
             type="number"
             min="0.5"
             max="40"
-            step="0.1"
+            step="0.01"
             inputmode="decimal"
             @input="
               updateDraft(index, {
@@ -869,13 +869,13 @@ onBeforeUnmount(() => {
             "
         /></label>
         <label v-if="draft.kind === 'measurement'" class="field"
-          ><span>身高（cm）<small>可选</small></span
+          ><span>身高 / 身长（cm）<small>可选</small></span
           ><input
             :value="draft.heightCm ?? ''"
             type="number"
             min="20"
             max="130"
-            step="0.1"
+            step="0.01"
             inputmode="decimal"
             @input="
               updateDraft(index, {
@@ -890,7 +890,7 @@ onBeforeUnmount(() => {
             type="number"
             min="20"
             max="60"
-            step="0.1"
+            step="0.01"
             inputmode="decimal"
             @input="
               updateDraft(index, {

@@ -457,20 +457,20 @@ function toggleSpecial(event: Event) {
             type="number"
             min="0.5"
             max="40"
-            step="0.1"
+            step="0.01"
             inputmode="decimal"
-            placeholder="例如 7.2"
+            placeholder="例如 7.25"
         /></label>
         <label class="field"
-          ><span>身高（cm）</span
+          ><span>身高 / 身长（cm）</span
           ><input
             v-model="measure.heightCm"
             type="number"
             min="20"
             max="130"
-            step="0.1"
+            step="0.01"
             inputmode="decimal"
-            placeholder="例如 65"
+            placeholder="例如 65.25"
         /></label>
         <label class="field"
           ><span>头围（cm）</span
@@ -479,9 +479,9 @@ function toggleSpecial(event: Event) {
             type="number"
             min="20"
             max="60"
-            step="0.1"
+            step="0.01"
             inputmode="decimal"
-            placeholder="例如 42"
+            placeholder="例如 42.35"
         /></label>
         <button class="button button-secondary" type="submit" :disabled="busy">
           <Plus :size="15" aria-hidden="true" />记一次测量

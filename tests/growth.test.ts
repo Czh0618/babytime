@@ -66,6 +66,28 @@ test("手动测量草稿能通过记录校验，三项全空会被拦下", () =>
   );
 });
 
+test("体重、身高/身长、头围允许两位小数，超过两位要拦下", () => {
+  const draft = measurementDraft(
+    { weightKg: 7.25, heightCm: 65.25, headCm: 42.35 },
+    now,
+  );
+  assert.equal(validateEntry(draft), null);
+
+  const [voice] = parseVoiceTranscript("身长65.25厘米，头围42.35厘米", now);
+  assert.equal(voice!.heightCm, 65.25);
+  assert.equal(voice!.headCm, 42.35);
+  assert.equal(validateVoiceDraft(voice!), null);
+
+  assert.match(
+    validateEntry(measurementDraft({ heightCm: 65.255 }, now))!,
+    /最多保留 2 位小数/,
+  );
+  // 语音里的更多位小数收敛到两位，草稿不会卡在校验上。
+  const [precise] = parseVoiceTranscript("体重7.257公斤", now);
+  assert.equal(precise!.weightKg, 7.26);
+  assert.equal(validateVoiceDraft(precise!), null);
+});
+
 test("早产按矫正月龄画：预产期晚于生日时用预产期做起点", () => {
   const preterm: BabyProfile = {
     name: "小满",

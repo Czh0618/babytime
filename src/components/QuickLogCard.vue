@@ -52,8 +52,12 @@ function tick() {
 }
 function syncTicker() {
   clearInterval(ticker);
-  // 只在计时进行时每秒刷新，避免空转。
-  if (started.value) ticker = setInterval(tick, 1000);
+  // 只在计时进行时每秒刷新，避免空转；开始时先取一次真实当前时间，
+  // 否则会沿用组件挂载时的旧值，第一秒显示不出正确的 00:00。
+  if (started.value) {
+    tick();
+    ticker = setInterval(tick, 1000);
+  }
 }
 onMounted(syncTicker);
 onBeforeUnmount(() => clearInterval(ticker));

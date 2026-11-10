@@ -16,8 +16,14 @@ export interface ActiveTimer {
   babyId?: string;
   /** 第一次开始的时间（YYYY-MM-DDTHH:mm），用作记录时间。 */
   startedAt: string;
-  /** 当前这一段开始的时间；换边后更新。 */
+  /** 当前这一段开始的时间（YYYY-MM-DDTHH:mm）；换边后更新。 */
   segmentAt: string;
+  /**
+   * 当前这一段的精确起点（epoch 毫秒）。segmentAt 只精确到分钟，
+   * 单靠它算秒会把「当前分钟已过的秒数」误算成已经喂了那么久。
+   * 旧状态没有该字段时，按 segmentAt 的分钟精度回退。
+   */
+  segmentStartedMs?: number;
   /** 当前这一段在哪一侧。 */
   side: TimerSide;
   /** 换边前已经累计的分钟。 */
@@ -65,6 +71,12 @@ export function parseActiveTimer(raw: string | null | undefined): ActiveTimer | 
     segmentAt: record.segmentAt,
     side: record.side as TimerSide,
   };
+  // 损坏的精确起点当作旧状态忽略，不让整条计时失效。
+  if (
+    typeof record.segmentStartedMs === "number" &&
+    Number.isFinite(record.segmentStartedMs)
+  )
+    timer.segmentStartedMs = record.segmentStartedMs;
   const accumulated = record.accumulated as Record<string, unknown> | undefined;
   if (accumulated !== undefined) {
     if (!validMinutes(accumulated.left) || !validMinutes(accumulated.right))
@@ -106,13 +118,15 @@ export function startTimer(
     ...(babyId ? { babyId } : {}),
     startedAt: stamp,
     segmentAt: stamp,
+    segmentStartedMs: now.getTime(),
     side,
     accumulated: { left: 0, right: 0 },
   };
 }
 
 function segmentSeconds(timer: ActiveTimer, now: Date): number {
-  const value = (now.getTime() - Date.parse(timer.segmentAt)) / 1000;
+  const start = timer.segmentStartedMs ?? Date.parse(timer.segmentAt);
+  const value = (now.getTime() - start) / 1000;
   // 时钟回拨或设备时间被改动时不给负数。
   return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
@@ -145,6 +159,7 @@ export function switchTimerSide(
     ...timer,
     side,
     segmentAt: localDateTime(now),
+    segmentStartedMs: now.getTime(),
     accumulated: feedingSideMinutes(timer, now),
   };
 }

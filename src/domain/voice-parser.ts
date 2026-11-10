@@ -1,9 +1,12 @@
 import { localDateTime } from "./date.ts";
 import {
   CARE_LABELS,
+  MEASURE_DECIMALS,
   MEASURE_RANGES,
   TEMPERATURE_MAX,
   TEMPERATURE_MIN,
+  hasMeasurePrecision,
+  roundMeasure,
   type CareFields,
   type CareKind,
   type TemperatureSite,
@@ -329,13 +332,13 @@ function parseMeasurement(clause: string): CareFields {
   const weight =
     clause.match(/(?:体重)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:公斤|kg|千克)/i)?.[1] ??
     clause.match(/体重\s*(?:是|有)?\s*([0-9]+(?:\.[0-9]+)?)/)?.[1];
-  if (weight) fields.weightKg = Number(weight);
+  if (weight) fields.weightKg = roundMeasure(Number(weight));
   const height =
     clause.match(/(?:身高|身长)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:厘米|cm|公分)/i)?.[1] ??
     clause.match(/(?:身高|身长)\s*(?:是|有)?\s*([0-9]+(?:\.[0-9]+)?)/)?.[1];
-  if (height) fields.heightCm = Number(height);
+  if (height) fields.heightCm = roundMeasure(Number(height));
   const head = clause.match(/头围\s*(?:是|有)?\s*([0-9]+(?:\.[0-9]+)?)/)?.[1];
-  if (head) fields.headCm = Number(head);
+  if (head) fields.headCm = roundMeasure(Number(head));
   return fields;
 }
 
@@ -568,6 +571,8 @@ export function validateVoiceDraft(draft: VoiceDraft): string | null {
       if (value === undefined) continue;
       if (!Number.isFinite(value) || value < range.min || value > range.max)
         return `${range.label}需要在 ${range.min}–${range.max}${range.unit} 之间，请核对。`;
+      if (!hasMeasurePrecision(value))
+        return `${range.label}最多保留 ${MEASURE_DECIMALS} 位小数，请核对。`;
     }
   }
   return null;

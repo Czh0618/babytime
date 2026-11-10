@@ -104,7 +104,8 @@ const activePoint = computed(() => props.points[activeIdx.value]);
 const deltaLabel = computed(() => {
   const idx = activeIdx.value;
   if (idx <= 0 || !props.points[idx] || !props.points[idx - 1]) return "";
-  const diff = round(props.points[idx]!.value - props.points[idx - 1]!.value);
+  // 记录值允许两位小数，差值也按两位显示，别把 0.25 显示成 0.3。
+  const diff = round(props.points[idx]!.value - props.points[idx - 1]!.value, 2);
   if (diff === 0) return "与上次持平";
   return `较上次 ${diff > 0 ? `+${diff}` : diff} ${props.unit}`;
 });
@@ -119,8 +120,9 @@ const bandLabel = computed(() =>
     : null,
 );
 
-function round(value: number) {
-  return Math.round(value * 10) / 10;
+function round(value: number, decimals = 1) {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
 }
 </script>
 
