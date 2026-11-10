@@ -3,20 +3,33 @@ import { parseBackupContent, type WorkspaceBackup } from "../domain/workspace-sc
 import { blobToDataUrl, MAX_FILE_BYTES } from "./media.ts";
 import { readMedia, type StoredMedia } from "./storage.ts";
 
+/** readMedia 的返回形状；测试注入的替身按同一形状返回。 */
+type ReadMediaResult =
+  | { file: Blob; thumbnail?: Blob; remoteOnly?: boolean }
+  | undefined;
+
 /** P7.1：多图记录可能让同一素材出现多次，内嵌原片按 id 去重，保留最后一份。 */
 export function dedupeBackupMediaFiles<T extends { id: string }>(files: T[]): T[] {
   return [...new Map(files.map((item) => [item.id, item])).values()];
 }
 
-/** 逐个读取原片，避免同时将所有视频载入内存。缺失的原片由调用方明确提示。 */
-export async function createBackup(workspace: StoredWorkspace): Promise<WorkspaceBackup> {
+/**
+ * 逐个读取原片，避免同时将所有视频载入内存。缺失的原片由调用方明确提示。
+ * read 可注入，便于测试；默认读本机 IndexedDB。
+ */
+export async function createBackup(
+  workspace: StoredWorkspace,
+  read: (id: string) => Promise<ReadMediaResult> = readMedia,
+): Promise<WorkspaceBackup> {
   const backup = parseBackupContent(JSON.stringify(workspace));
   const seen = new Set<string>();
   for (const media of backup.workspace.media) {
     if (media.demo || seen.has(media.id)) continue;
     seen.add(media.id);
-    const data = await readMedia(media.id);
-    if (!data) continue;
+    const data = await read(media.id);
+    // P7.2：本机只有缩略图的照片不能当原片写进备份，否则恢复时
+    // 尺寸校验会拒绝整份备份；这类照片计入调用方的「缺少原片」数量。
+    if (!data || data.remoteOnly) continue;
     backup.mediaFiles.push({
       id: media.id,
       dataUrl: await blobToDataUrl(data.file),

@@ -216,26 +216,63 @@ if [[ -f "$SYNC_UNIT" ]]; then
 "
 fi
 
+# 线上 JS/CSS 原来是未压缩传输；开启 gzip 后体积约降到三分之一。
+GZIP_SETTINGS="    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_types text/css application/javascript application/json image/svg+xml application/manifest+json;"
+
+# nginx 的 add_header 不跨层继承：location 里只要写了自己的 add_header，
+# server 级的响应头就会全部丢失，所以每个内容 location 都要重复这一组。
+SECURITY_HEADERS="$(cat <<'HDR'
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: http:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" always;
+HDR
+)"
+
 write_http_config() {
   local server_name="$1"
   local http_port="$2"
+  local redirect="${3:-}"
+  # ip-https 迁移完成后，80 端口只保留证书验证路径，其余请求跳转到 https，
+  # 避免家人误在 http 站记账（两种来源的浏览器存储互不相通）。
+  if [[ "$redirect" == "https" ]]; then
+    cat > "$NEXT_CONF" <<EOF
+server {
+    listen $http_port;
+    server_name $server_name;
+${ACME_LOCATION}
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+EOF
+    return
+  fi
   cat > "$NEXT_CONF" <<EOF
 server {
     listen $http_port;
     server_name $server_name;
     root $APP_ROOT/current;
     index index.html;
+${GZIP_SETTINGS}
+${SECURITY_HEADERS}
 ${ACME_LOCATION}
     location = /index.html {
         add_header Cache-Control "no-cache";
+${SECURITY_HEADERS}
     }
 
     location /assets/ {
         add_header Cache-Control "public, max-age=31536000, immutable";
+${SECURITY_HEADERS}
         try_files \$uri =404;
     }
 
     location / {
+${SECURITY_HEADERS}
         try_files \$uri \$uri/ /index.html;
     }
 }
@@ -244,9 +281,10 @@ EOF
 
 write_https_config() {
   if [[ "$MODE" == "ip-https" ]]; then
-    # Keep plain HTTP for ACME renewals and so data saved on the http origin can
-    # still be exported; browsers keep http and https storage separate.
-    write_http_config "$SERVER_NAME" 80
+    # Port 80 keeps the ACME challenge path and redirects everything else to
+    # https; browsers keep http and https storage separate, so allowing http
+    # would silently create a second, invisible set of records.
+    write_http_config "$SERVER_NAME" 80 https
   else
     cat > "$NEXT_CONF" <<EOF
 server {
@@ -267,17 +305,22 @@ server {
     ssl_certificate $CERT_DIR/fullchain.pem;
     ssl_certificate_key $CERT_DIR/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
+${GZIP_SETTINGS}
+${SECURITY_HEADERS}
 ${SYNC_LOCATION}
     location = /index.html {
         add_header Cache-Control "no-cache";
+${SECURITY_HEADERS}
     }
 
     location /assets/ {
         add_header Cache-Control "public, max-age=31536000, immutable";
+${SECURITY_HEADERS}
         try_files \$uri =404;
     }
 
     location / {
+${SECURITY_HEADERS}
         try_files \$uri \$uri/ /index.html;
     }
 }

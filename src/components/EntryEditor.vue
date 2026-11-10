@@ -110,7 +110,13 @@ const missingCount = computed(
   () =>
     slots.value.filter(
       (slot) =>
-        !slot.upload && slot.asset && !slot.asset.demo && !slot.asset.url,
+        !slot.upload &&
+        slot.asset &&
+        !slot.asset.demo &&
+        // 只有缩略图也算可见：原片在服务器上，点开大图会按需取回，
+        // 不能把家人设备上的每张照片都提示成「原片不在本机」。
+        !slot.asset.url &&
+        !slot.asset.thumbnailUrl,
     ).length,
 );
 const uploadLabel = computed(() =>

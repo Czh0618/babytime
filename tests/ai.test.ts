@@ -4,6 +4,7 @@ import {
   AIOutputError,
   buildCaptionUserPrompt,
   buildVoiceUserPrompt,
+  maskBabyName,
   parseAICaption,
   parseAIVoiceDrafts,
   parseJsonObject,
@@ -415,4 +416,17 @@ test("AI.1 接种：命中程序内的缩写保留，未知缩写降级为备注
   assert.equal(unknown!.kind, "note");
   assert.equal(unknown!.vaccineCode, undefined);
   assert.match(unknown!.reviewNote ?? "", /日常备注/);
+});
+
+test("发送前把宝宝姓名替换成「宝宝」；单字昵称保持原文", () => {
+  assert.equal(
+    maskBabyName("小满今天喂奶 2 次。小满睡了。", "小满"),
+    "宝宝今天喂奶 2 次。宝宝睡了。",
+  );
+  assert.equal(maskBabyName("今天喂奶 2 次。", "小满"), "今天喂奶 2 次。");
+  assert.equal(maskBabyName("小满满月了", " 小满 "), "宝宝满月了");
+  // 单字昵称在中文里无法可靠区分，替换会误伤普通词语，因此保持原文。
+  assert.equal(maskBabyName("今天很安静", "安"), "今天很安静");
+  assert.equal(maskBabyName("今天喂奶", ""), "今天喂奶");
+  assert.equal(maskBabyName("今天喂奶", undefined), "今天喂奶");
 });

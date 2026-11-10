@@ -116,3 +116,35 @@ test("P7.2.3 客户端请求带家庭密钥，路径与 variant 符合服务端�
     globalThis.fetch = originalFetch;
   }
 });
+
+test("P7.2.4 exists 超过服务端 500 条上限时自动分批，不再整轮 400", async () => {
+  const lengths: number[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL, init: RequestInit = {}) => {
+    const body = JSON.parse(String(init.body ?? "{}")) as { ids: string[] };
+    lengths.push(body.ids.length);
+    return new Response(JSON.stringify({ ids: body.ids }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const ids = Array.from({ length: 1201 }, (_, index) => `id-${index}`);
+    const found = await mediaExists(KEY, ids);
+    assert.equal(found.length, 1201);
+    assert.deepEqual(lengths, [500, 500, 201]);
+    // 已有重复 id 时先去重，不足一批只发一次。
+    assert.deepEqual(await mediaExists(KEY, [ID, ID]), [ID]);
+    assert.deepEqual(lengths, [500, 500, 201, 1]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("exists 404 提示服务器还没开启照片同步；原片 GET 404 仍是素材缺失", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response("{}", { status: 404 })) as typeof fetch;
+  try {
+    await assert.rejects(() => mediaExists(KEY, [ID]), /还没有开启照片同步/);
+    await assert.rejects(() => downloadMedia(KEY, ID, "original"), /原片同步失败（404）/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

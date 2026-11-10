@@ -24,12 +24,10 @@ import {
 } from "../domain/records";
 import {
   clearAllData,
-  deleteMedia,
   pruneOrphanMedia,
   readMedia,
   readWorkspace,
   removeMediaAndWorkspace,
-  storeMedia,
   writeWorkspace,
   writeWorkspaceAndMedia,
   type StoredMedia,
@@ -50,7 +48,7 @@ import type { VoiceDraft } from "../domain/care-types";
 import type { AICaption } from "../domain/ai";
 import { migrateSyncMeta, stampChanges } from "../domain/sync-meta";
 import { activeProfileOf, migrateProfiles } from "../domain/profiles";
-import { referencedMediaIds } from "../domain/media-refs";
+import { referencedMediaIds, unreferencedMediaIds } from "../domain/media-refs";
 import { runSync, type SyncOutcome } from "../domain/sync";
 import {
   clearMediaProgress,
@@ -189,6 +187,10 @@ export function useWorkspace() {
     recaps: recaps.value.length,
     bytes: media.value.reduce((sum, item) => sum + item.size, 0),
   }));
+  /** 没有任何记录引用的素材数量（家庭页的清理入口）。 */
+  const unreferencedMediaCount = computed(
+    () => unreferencedMediaIds(workspace.value).length,
+  );
 
   function releaseUrls(media: MediaAsset[]) {
     media.forEach((item) => {
@@ -341,7 +343,6 @@ export function useWorkspace() {
           continue;
         }
         const id = createId();
-        let saved = false;
         let asset: MediaAsset | undefined;
         try {
           validateMediaFile(file);
@@ -364,8 +365,8 @@ export function useWorkspace() {
           };
           if (info.thumbnail)
             asset.thumbnailUrl = URL.createObjectURL(info.thumbnail);
-          await storeMedia(id, file, info.thumbnail);
-          saved = true;
+          // 原片随候选一起在同一事务里落库（见下方 update 的 mediaFiles），
+          // 这里不再单独写一次，避免同一批文件写两遍。
           const item: ImportedAsset = {
             asset,
             stored: { id, file, thumbnail: info.thumbnail },
@@ -373,7 +374,6 @@ export function useWorkspace() {
           };
           (info.kind === "image" ? photos : videos).push(item);
         } catch (error) {
-          if (saved) await deleteMedia(id).catch(() => {});
           if (asset) releaseUrls([asset]);
           errors.push(
             `${file.name}：${error instanceof Error ? error.message : "导入失败，请重试。"}`,
@@ -408,9 +408,6 @@ export function useWorkspace() {
           }, group.map((item) => item.stored));
           count++;
         } catch (error) {
-          await Promise.all(
-            group.map((item) => deleteMedia(item.asset.id).catch(() => {})),
-          );
           releaseUrls(group.map((item) => item.asset));
           errors.push(
             `整理这批素材时出错：${error instanceof Error ? error.message : "请重试。"}`,
@@ -796,6 +793,26 @@ export function useWorkspace() {
     });
   }
 
+  /**
+   * 清理「这次不收录」与删除记录后留下的素材：只删没有任何成长记录或
+   * 待整理候选引用的素材；原片随墓碑回收，服务器副本同步时一并删除。
+   */
+  async function cleanupUnreferencedMedia(): Promise<number> {
+    if (!unreferencedMediaIds(workspace.value).length) return 0;
+    let removed: MediaAsset[] = [];
+    await update((next) => {
+      const ids = unreferencedMediaIds(next);
+      if (!ids.length) return;
+      removed = next.media.filter((item) => ids.includes(item.id));
+      next.media = next.media.filter((item) => !ids.includes(item.id));
+    });
+    if (removed.length) {
+      releaseUrls(removed);
+      await collectOrphanMedia(workspace.value);
+    }
+    return removed.length;
+  }
+
   async function reset() {
     await writes.catch(() => {});
     const oldMedia = workspace.value.media;
@@ -842,6 +859,7 @@ export function useWorkspace() {
       return Promise.resolve(null);
     syncing ??= (async () => {
       syncState.value.running = true;
+      let succeeded = false;
       try {
         const outcome = await runSync({
           since: readSince(),
@@ -853,15 +871,19 @@ export function useWorkspace() {
         writeSince(outcome.now);
         syncState.value.lastAt = new Date().toISOString();
         syncState.value.error = "";
+        succeeded = true;
         // P7.2：结构化同步成功后才传照片；服务器尚未升级或离线时不影响记录同步。
         try {
           const media = await syncMedia(workspace.value, config.key);
           if (media.downloaded.length)
             await refreshAttachedMedia(media.downloaded);
-        } catch {
+        } catch (cause) {
           writeMediaProgress({
             ...readMediaProgress(),
-            error: "服务器还没有开启照片同步，记录同步不受影响。",
+            error:
+              cause instanceof Error && cause.message
+                ? cause.message
+                : "照片同步暂时失败，下次同步会重试；记录同步不受影响。",
           });
         }
         return outcome;
@@ -871,6 +893,9 @@ export function useWorkspace() {
       } finally {
         syncState.value.running = false;
         syncing = null;
+        // 本轮同步期间产生的新改动不在已推送的批次里：成功且仍待推时补排一轮。
+        if (succeeded && readSyncConfig()?.enabled && workspace.value.syncDirty?.length)
+          scheduleSync(1000);
       }
     })();
     return syncing;
@@ -911,6 +936,8 @@ export function useWorkspace() {
     loadDemo,
     refreshAttachedMedia,
     deleteRecap,
+    cleanupUnreferencedMedia,
+    unreferencedMediaCount,
     reset,
     restore,
     syncNow,

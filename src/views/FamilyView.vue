@@ -33,9 +33,11 @@ const props = withDefaults(
     profiles: BabyProfile[];
     stats: FamilyStats;
     hasDemo: boolean;
+    /** 没有任何记录引用的素材数量；大于 0 时显示清理入口。 */
+    unreferencedCount?: number;
     busy?: boolean;
   }>(),
-  { busy: false },
+  { busy: false, unreferencedCount: 0 },
 );
 
 const emit = defineEmits<{
@@ -47,6 +49,7 @@ const emit = defineEmits<{
   exportLegacy: [];
   restoreData: [file: File];
   clearData: [];
+  cleanupMedia: [];
   openAiSettings: [];
   openSyncSettings: [];
   syncNow: [];
@@ -360,7 +363,9 @@ function clearData() {
                 <span>待整理起名</span>只发文件名、类型、拍摄时间和那句话，看不到画面。
               </li>
               <li><span>趋势解读</span>只发按天汇总的数字与月龄，不发原话。</li>
-              <li>宝宝姓名、生日和照片视频始终不发；结果一律先给你确认。</li>
+              <li>
+                宝宝生日和照片视频始终不发；文字里出现的宝宝姓名会先替换成「宝宝」再发送（单字昵称可能无法完全识别）。结果一律先给你确认。
+              </li>
             </ul>
           </div>
           <div class="ai-setting-actions">
@@ -516,6 +521,23 @@ function clearData() {
               @change="restoreData"
             />
           </label>
+        </div>
+        <div v-if="unreferencedCount > 0" class="data-action">
+          <div>
+            <strong>清理未归档素材</strong>
+            <p class="muted">
+              「这次不收录」和删除记录时留下的原片不会出现在任何记录里，共
+              {{ unreferencedCount }} 个，仍占本机空间。清理后会从本机和已开启同步的服务器移除，无法撤销。
+            </p>
+          </div>
+          <button
+            class="button button-secondary"
+            type="button"
+            :disabled="busy"
+            @click="emit('cleanupMedia')"
+          >
+            <Trash2 :size="16" aria-hidden="true" />清理
+          </button>
         </div>
         <div v-if="hasDemo" class="data-action">
           <div>

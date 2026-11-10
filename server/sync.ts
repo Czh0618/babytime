@@ -192,7 +192,8 @@ export function openStore(
     if (!row?.payload) return undefined;
     try {
       const payload = JSON.parse(row.payload as string) as Row;
-      return typeof payload.mime === "string" && payload.mime
+      // 只回图片类型：客户端上传的值不能变成任意 Content-Type（如 text/html）。
+      return typeof payload.mime === "string" && IMAGE_MIME.test(payload.mime)
         ? payload.mime
         : undefined;
     } catch {
@@ -202,6 +203,9 @@ export function openStore(
 
   return { pull, push, reset, blob, putBlob, mediaMime, close: () => db.close() };
 }
+
+/** 照片原片的 Content-Type 白名单：只放行 image/*。 */
+const IMAGE_MIME = /^image\/[a-z0-9.+-]+$/i;
 
 const isObject = (value: unknown): value is Row =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -269,7 +273,11 @@ export function createHandler({
 }) {
   if (!key || key.length < 32) throw new Error("BABYTIME_SYNC_KEY 至少 32 个字符。");
   const send = (res: ServerResponse, status: number, body: unknown) => {
-    res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    res.writeHead(status, {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    });
     res.end(JSON.stringify(body));
   };
   const filePath = (id: string, variant: MediaVariant) =>
@@ -379,6 +387,7 @@ export function createHandler({
       "content-length": String(row.size),
       etag,
       "cache-control": "private, max-age=31536000, immutable",
+      "x-content-type-options": "nosniff",
     };
     if (req.headers["if-none-match"] === etag) {
       res.writeHead(304, headers);

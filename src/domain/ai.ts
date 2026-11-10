@@ -42,6 +42,16 @@ export class AIOutputError extends Error {
   }
 }
 
+/**
+ * 发送给模型前把宝宝姓名替换成中性称呼。
+ * 单字昵称不替换：中文里无法可靠区分「安」是名字还是普通词，宁可保留原文。
+ */
+export function maskBabyName(text: string, name?: string): string {
+  const clean = name?.trim() ?? "";
+  if (clean.length < 2) return text;
+  return text.split(clean).join("宝宝");
+}
+
 const CARE_KINDS: CareKind[] = [
   "feeding",
   "sleep",

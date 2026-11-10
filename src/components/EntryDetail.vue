@@ -55,7 +55,7 @@ function handleClip(event: "metadata" | "play" | "timeupdate") {
       ><span>由家长确认的照护记录</span>
     </div>
     <video
-      v-else-if="videoAsset?.url && videoAsset.previewable"
+      v-if="videoAsset?.url && videoAsset.previewable"
       ref="video"
       class="full-media"
       :src="videoAsset.url"
@@ -105,7 +105,12 @@ function handleClip(event: "metadata" | "play" | "timeupdate") {
         >
       </div>
     </div>
-    <MediaTile v-else :media="media?.[0]" variant="wide" :label="entry.title" />
+    <MediaTile
+      v-else-if="!entry.care"
+      :media="media?.[0]"
+      variant="wide"
+      :label="entry.title"
+    />
     <p v-if="entry.note" class="detail-note">{{ entry.note }}</p>
     <p v-else class="detail-note muted">这一刻本身，就值得记住。</p>
     <details v-if="entry.care?.sourceText" class="care-source">
@@ -197,6 +202,11 @@ function handleClip(event: "metadata" | "play" | "timeupdate") {
 .care-detail > span:last-child {
   color: var(--muted);
   font-size: 12px;
+}
+/* 照护记录也可以带照片/视频：内容块在卡片下方时补一点间距。 */
+.care-detail + .photo-strip,
+.care-detail + video {
+  margin-top: 22px;
 }
 .care-source {
   margin: 0 0 22px;

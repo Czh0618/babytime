@@ -45,6 +45,8 @@ npm run deploy -- domain your-domain.com
 npm run deploy -- ip-https
 ```
 
+ip-https 部署后，80 端口只保留证书自动续期的验证路径，其余 HTTP 请求会 301 跳转到 https；迁移完 http 站的记录后不要再从 http 地址记账（两种来源的浏览器存储互不相通）。Nginx 同时开启 gzip 压缩，并附带 `nosniff`、CSP 等安全响应头。
+
 ### 多设备同步（可选）
 
 在 `.deploy.env` 加 `DEPLOY_SYNC=1` 后用 `ip-https` 或 `domain` 模式部署，会在服务器上安装 `babytime-sync`（`server/sync.ts`，只用 Node 标准库，需要服务器 Node.js ≥ 22.18）：systemd 服务只监听 `127.0.0.1:8787`，Nginx 只在 443 上把 `/sync/` 反代过去，数据在 `/var/lib/babytime/sync.db`。首次安装会在终端打印一次家庭密钥（保存在服务器 `/etc/babytime-sync.env`，仅 root 可读），请存进密码管理器，再到每台设备“家庭”页的“多设备同步”里填入。设计、冲突规则与回滚见 `docs/SYNC.md`。

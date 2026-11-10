@@ -139,6 +139,7 @@ const {
   vaccinations,
   milestones,
   vaccinePlan,
+  unreferencedMediaCount,
 } = model;
 const tabs = [
   { id: "time", name: "今天", icon: NotebookPen },
@@ -645,7 +646,7 @@ async function downloadBackup() {
     const missing = await exportRecords(workspace.value);
     say(
       missing
-        ? `已导出备份，但有 ${missing} 个素材缺少原片，未包含在文件中。请补回原片后重新备份。`
+        ? `已导出备份，但有 ${missing} 个素材的原片不在本机（可能只在服务器上），未包含在文件中。打开这些照片的大图取回原片后，可重新备份。`
         : "已准备备份 JSON，包含记录和本机原片。",
       missing > 0,
     );
@@ -692,6 +693,23 @@ function askDeleteRecap(id: string) {
     title: "删除这份回顾？",
     description: "只删除这份回顾，成长记录和原片会保留。",
     action: () => model.deleteRecap(id),
+  };
+}
+
+/** 清理「这次不收录」等操作留下的、没有任何记录引用的素材。 */
+function askCleanupMedia() {
+  const count = unreferencedMediaCount.value;
+  if (!count) return;
+  overlay.value = {
+    kind: "confirm",
+    title: `清理 ${count} 个未归档素材？`,
+    description:
+      "这些素材不在任何成长记录或待整理里，多来自「这次不收录」或删除记录时保留了原片。清理后会从本机和已开启同步的服务器移除，无法撤销。",
+    confirmLabel: "确认清理",
+    success: "已清理未归档素材。",
+    action: async () => {
+      await model.cleanupUnreferencedMedia();
+    },
   };
 }
 
@@ -925,6 +943,7 @@ onBeforeUnmount(() => {
               v-if="anniversary && !anniversaryDismissed"
               :anniversary="anniversary"
               :ai-ready="aiReady"
+              :baby-name="activeProfile.name"
               @dismiss="anniversaryDismissed = true"
             />
             <VoiceEntryCard @start="openVoice" />
@@ -947,7 +966,12 @@ onBeforeUnmount(() => {
               @voice="openVoice"
               @open="(entry) => (overlay = { kind: 'detail', id: entry.id })"
             />
-            <HandoffCard v-if="handoff" :summary="handoff" :ai-ready="aiReady" />
+            <HandoffCard
+              v-if="handoff"
+              :summary="handoff"
+              :ai-ready="aiReady"
+              :baby-name="activeProfile.name"
+            />
             <AgeGuideCard
               :baby="activeProfile"
               :milestones="milestones"
@@ -980,6 +1004,7 @@ onBeforeUnmount(() => {
           :error="formError"
           :age-months="ageMonths"
           :ai-ready="aiReady"
+          :baby-name="activeProfile.name"
           @create="createRecap"
           @open="(item) => (overlay = { kind: 'recap', id: item.id })"
           @download="
@@ -1014,6 +1039,7 @@ onBeforeUnmount(() => {
           :profiles="profiles"
           :stats="stats"
           :has-demo="hasDemo"
+          :unreferenced-count="unreferencedMediaCount"
           :busy="busy"
           @save="
             (baby) => perform(() => model.saveProfile(baby), '宝宝资料已保存。')
@@ -1024,6 +1050,7 @@ onBeforeUnmount(() => {
           @add-profile="addProfile"
           @remove-profile="askRemoveProfile"
           @clear-data="askClear"
+          @cleanup-media="askCleanupMedia"
           @restore-data="askRestore"
           @export-data="downloadBackup"
           @export-legacy="downloadLegacyBackup"

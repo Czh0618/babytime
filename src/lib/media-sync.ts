@@ -133,26 +133,39 @@ async function request(key: string, path: string, init: RequestInit): Promise<Re
     ...init,
     headers: { authorization: `Bearer ${key}`, ...(init.headers ?? {}) },
   });
-  if (!response.ok) throw new Error(`原片同步失败（${response.status}）`);
+  if (!response.ok) {
+    // exists 接口 404/405 说明服务器还是旧版本；其它错误按状态码如实提示，
+    // 不能一律说成「服务器没有开启照片同步」。
+    if (path.startsWith("/sync/media/exists") && (response.status === 404 || response.status === 405))
+      throw new Error("服务器还没有开启照片同步，记录同步不受影响。");
+    throw new Error(`原片同步失败（${response.status}）`);
+  }
   return response;
 }
 
-/** 批量查服务器已有的原片 / 缩略图，避免重复上传。 */
+/** 服务端 exists 单次最多接受 500 个 id，超过要分批，否则整轮照片同步会 400。 */
+const EXISTS_LIMIT = 500;
+
+/** 批量查服务器已有的原片 / 缩略图，避免重复上传；按服务端上限分批。 */
 export async function mediaExists(
   key: string,
   ids: string[],
   variant: MediaVariant = "original",
 ): Promise<string[]> {
-  if (!ids.length) return [];
-  const response = await request(key, "/sync/media/exists", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ids, variant }),
-  });
-  const data = (await response.json().catch(() => null)) as { ids?: unknown } | null;
-  return Array.isArray(data?.ids)
-    ? data.ids.filter((id): id is string => typeof id === "string")
-    : [];
+  const unique = [...new Set(ids)];
+  if (!unique.length) return [];
+  const found: string[] = [];
+  for (let start = 0; start < unique.length; start += EXISTS_LIMIT) {
+    const response = await request(key, "/sync/media/exists", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: unique.slice(start, start + EXISTS_LIMIT), variant }),
+    });
+    const data = (await response.json().catch(() => null)) as { ids?: unknown } | null;
+    if (Array.isArray(data?.ids))
+      found.push(...data.ids.filter((id): id is string => typeof id === "string"));
+  }
+  return [...new Set(found)];
 }
 
 export async function uploadMedia(
@@ -291,7 +304,9 @@ export async function syncMedia(
 
   for (const id of existing.filter((id) => withThumb.includes(id))) {
     const stored = await readMedia(id);
-    if (stored && !stored.remoteOnly) continue; // 本机原片优先
+    // 本机原片优先；remoteOnly 且已有缩略图也不需要每轮重下——
+    // 否则家人设备每次同步都会重复下载、重复写 IndexedDB。
+    if (stored && (stored.thumbnail || !stored.remoteOnly)) continue;
     try {
       const thumbnail = await downloadMedia(key, id, "thumb");
       await storeMedia(id, thumbnail, thumbnail, true);

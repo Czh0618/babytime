@@ -117,6 +117,25 @@ test("今日交接摘要只写当天记录到的数字", () => {
   assert.equal(buildHandoffSummary([], { now }), "");
 });
 
+test("交接摘要的最近体温取最后一次测量，不上报当日最高", () => {
+  const now = new Date(2026, 10, 7, 18, 0);
+  const entries = [
+    entry("1", "2026-11-07T08:00", {
+      kind: "temperature",
+      temperatureC: 38.6,
+      sourceText: "早上量的",
+    }),
+    entry("2", "2026-11-07T15:00", {
+      kind: "temperature",
+      temperatureC: 36.8,
+      sourceText: "下午量的",
+    }),
+  ];
+  const text = buildHandoffSummary(entries, { name: "小满", now });
+  assert.match(text, /最近体温 36.8℃（15:00）/);
+  assert.doesNotMatch(text, /38.6/);
+});
+
 test("AI 改写只允许保留原有数字，不能新增", () => {
   const source = "小满今天喂奶 2 次、共 270 ml。睡眠 1 小时 30 分。";
   assert.deepEqual(numbersIn(source), ["2", "270", "1", "30"]);

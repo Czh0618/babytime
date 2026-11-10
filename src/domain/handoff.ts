@@ -3,8 +3,8 @@ import { formatTime, localDate } from "./date.ts";
 import {
   describeCare,
   lastMedicineEntry,
+  lastTemperatureOn,
   summarizeMilk,
-  summarizeTemperature,
 } from "./care-records.ts";
 import { deriveSleepSegments, formatMinutes, sleepSummaryForDay } from "./sleep.ts";
 import { aggregateByDay } from "./stats.ts";
@@ -39,9 +39,10 @@ export function buildHandoffSummary(
     );
 
   const extra: string[] = [];
-  const temperature = summarizeTemperature(entries, today);
+  // 「最近体温」是最后一次测量的值，不是当日最高；交接时家人关心当下。
+  const temperature = lastTemperatureOn(entries, today, now);
   if (temperature)
-    extra.push(`最近体温 ${temperature.maxC}℃（${formatTime(temperature.at)}）`);
+    extra.push(`最近体温 ${temperature.value}℃（${formatTime(temperature.at)}）`);
   const medicine = lastMedicineEntry(entries, now);
   if (medicine && medicine.capturedAt.slice(0, 10) === today)
     extra.push(

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { parseVoiceTranscript } from "../src/domain/voice-parser.ts";
 import { addVoiceEntries } from "../src/domain/care-records.ts";
 import { emptyWorkspace } from "../src/domain/seed.ts";
+import { VACCINE_BY_CODE } from "../src/data/vaccines-2026.ts";
 import { buildVaccineIcs, icsFileName } from "../src/lib/ics.ts";
 
 const now = new Date(2026, 10, 7, 15, 30);
@@ -75,6 +76,25 @@ test("多宝宝与乙肝特殊程序：语音录入疫苗只按当前宝宝的�
   const addedHepb = workspace.vaccinations.find((item) => item.inputId?.startsWith("b2-hepb:"))!;
   assert.equal(addedHepb.babyId, "b2");
   assert.equal(addedHepb.dose, 4);
+});
+
+test("全部剂次都记过时，语音确认不再回退成第 1 剂重复记录", () => {
+  const workspace = emptyWorkspace();
+  const spec = VACCINE_BY_CODE.DTaP!;
+  workspace.vaccinations = spec.doses.map((item) => ({
+    id: `dtap-${item.dose}`,
+    code: "DTaP",
+    dose: item.dose,
+    date: "2026-01-01",
+    createdAt: "x",
+  }));
+  const batch = parseVoiceTranscript("下午三点打了百白破疫苗", now);
+  assert.equal(addVoiceEntries(workspace, batch, "full"), 1, "成长记录照常保存");
+  assert.equal(workspace.vaccinations!.length, spec.doses.length);
+  assert.equal(
+    workspace.vaccinations!.filter((item) => item.code === "DTaP" && item.dose === 1).length,
+    1,
+  );
 });
 
 test("日历文件是标准 ics，包含整日事件与提前一天提醒", () => {

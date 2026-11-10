@@ -2,10 +2,19 @@
 import { computed, ref } from "vue";
 import { Sparkles, X } from "@lucide/vue";
 import type { Anniversary } from "../domain/anniversary";
-import { ANNIVERSARY_SYSTEM_PROMPT, guardMedicalOutput } from "../domain/ai";
+import {
+  ANNIVERSARY_SYSTEM_PROMPT,
+  guardMedicalOutput,
+  maskBabyName,
+} from "../domain/ai";
 import { aiChat, aiErrorMessage } from "../lib/ai-service";
 
-const props = defineProps<{ anniversary: Anniversary; aiReady: boolean }>();
+const props = defineProps<{
+  anniversary: Anniversary;
+  aiReady: boolean;
+  /** 发送给模型前把文案里的宝宝姓名替换成「宝宝」。 */
+  babyName?: string;
+}>();
 const emit = defineEmits<{ dismiss: [] }>();
 
 const copy = ref("");
@@ -20,7 +29,10 @@ async function writeCopy() {
   try {
     const raw = await aiChat(
       ANNIVERSARY_SYSTEM_PROMPT,
-      `${props.anniversary.title}。${props.anniversary.detail}`,
+      maskBabyName(
+        `${props.anniversary.title}。${props.anniversary.detail}`,
+        props.babyName,
+      ),
     );
     copy.value = guardMedicalOutput(raw).text.slice(0, 60);
   } catch (cause) {

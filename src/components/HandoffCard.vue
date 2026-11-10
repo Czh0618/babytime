@@ -4,11 +4,17 @@ import { Check, Copy, Share2, Sparkles } from "@lucide/vue";
 import {
   HANDOFF_SYSTEM_PROMPT,
   guardMedicalOutput,
+  maskBabyName,
 } from "../domain/ai";
 import { numbersConsistent } from "../domain/handoff";
 import { aiChat, aiErrorMessage } from "../lib/ai-service";
 
-const props = defineProps<{ summary: string; aiReady: boolean }>();
+const props = defineProps<{
+  summary: string;
+  aiReady: boolean;
+  /** 发送给模型前把摘要里的宝宝姓名替换成「宝宝」。 */
+  babyName?: string;
+}>();
 
 const text = ref(props.summary);
 const copied = ref(false);
@@ -52,7 +58,10 @@ async function polish() {
   busy.value = true;
   error.value = "";
   try {
-    const raw = await aiChat(HANDOFF_SYSTEM_PROMPT, props.summary);
+    const raw = await aiChat(
+      HANDOFF_SYSTEM_PROMPT,
+      maskBabyName(props.summary, props.babyName),
+    );
     const guarded = guardMedicalOutput(raw).text.trim();
     // 数字对不上就整段丢弃，改用本机版本。
     if (!guarded || !numbersConsistent(guarded, props.summary)) {

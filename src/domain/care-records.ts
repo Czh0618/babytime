@@ -1,5 +1,5 @@
 import type { CareObservation, VoiceDraft } from "./care-types.ts";
-import { SITE_LABELS } from "./care-types.ts";
+import { SITE_LABELS, type CareKind } from "./care-types.ts";
 import type { GrowthEntry, Workspace } from "../types.ts";
 import { validateVoiceDraft, voiceDraftToEntry } from "./voice-parser.ts";
 import { validateEntry } from "./records.ts";
@@ -49,17 +49,20 @@ export function addVoiceEntries(
         const babyVaccinations = vaccinations.filter(
           (item) => !item.babyId || !activeBabyId || item.babyId === activeBabyId,
         );
-        vaccinations.push({
-          id: makeId(),
-          ...(activeBabyId ? { babyId: activeBabyId } : {}),
-          code: draft.vaccineCode,
-          name: spec?.name ?? draft.vaccineName,
-          dose:
-            nextDose(babyVaccinations, draft.vaccineCode, specialProgram) ?? 1,
-          date: draft.capturedAt.slice(0, 10),
-          createdAt: new Date().toISOString(),
-          inputId,
-        });
+        // 全部剂次都记过时 nextDose 返回 undefined；回退成第 1 剂会在下一轮
+        // 同步后造出重复接种记录，所以只写成长记录，不再写接种表。
+        const dose = nextDose(babyVaccinations, draft.vaccineCode, specialProgram);
+        if (dose !== undefined)
+          vaccinations.push({
+            id: makeId(),
+            ...(activeBabyId ? { babyId: activeBabyId } : {}),
+            code: draft.vaccineCode,
+            name: spec?.name ?? draft.vaccineName,
+            dose,
+            date: draft.capturedAt.slice(0, 10),
+            createdAt: new Date().toISOString(),
+            inputId,
+          });
       }
     }
   }
@@ -192,6 +195,52 @@ export function hoursSince(capturedAt: string, now = new Date()): string {
   if (minutes < 60) return `${minutes} 分钟`;
   const hours = minutes / 60;
   return hours < 10 ? `${hours.toFixed(1)} 小时` : `${Math.round(hours)} 小时`;
+}
+
+/**
+ * 今天页的「距上次」：各类照护记录在最近 24 小时内的最新一条。
+ * 只看「今天」会让零点后的夜奶显示成「还未记录」，跨午夜要往前看一天。
+ */
+export function latestCareByKind(
+  entries: GrowthEntry[],
+  now = new Date(),
+  windowMs = 24 * 60 * 60 * 1000,
+): Partial<Record<CareKind, GrowthEntry>> {
+  const result: Partial<Record<CareKind, GrowthEntry>> = {};
+  const cutoff = now.getTime() - windowMs;
+  for (const entry of entries) {
+    if (!entry.care) continue;
+    const time = Date.parse(entry.capturedAt);
+    if (!Number.isFinite(time) || time > now.getTime() || time < cutoff) continue;
+    const kind = entry.care.kind;
+    const current = result[kind];
+    // 同一时刻取后出现的一条，与按时间倒序的结果一致。
+    if (!current || entry.capturedAt >= current.capturedAt) result[kind] = entry;
+  }
+  return result;
+}
+
+/** 指定日期内最近一次体温记录；交接摘要说「最近体温」时用它，而不是当日最高。 */
+export function lastTemperatureOn(
+  entries: GrowthEntry[],
+  onDate = localDate(),
+  now = new Date(),
+): { value: number; at: string } | undefined {
+  let result: { value: number; at: string } | undefined;
+  for (const entry of entries) {
+    const care = entry.care;
+    if (
+      !care ||
+      care.kind !== "temperature" ||
+      care.temperatureC === undefined ||
+      entry.capturedAt.slice(0, 10) !== onDate ||
+      Date.parse(entry.capturedAt) > now.getTime()
+    )
+      continue;
+    if (!result || entry.capturedAt >= result.at)
+      result = { value: care.temperatureC, at: entry.capturedAt };
+  }
+  return result;
 }
 
 export interface MilkSummary {

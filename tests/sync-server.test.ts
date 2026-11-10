@@ -118,6 +118,25 @@ test("P7.2.1 上传 / 下载往返：ETag、Content-Type、HEAD、304、exists",
   }
 });
 
+test("P7.2.4 客户端 mime 不能变成任意 Content-Type，响应带 nosniff", async () => {
+  const h = await harness();
+  try {
+    h.store.push({
+      deviceId: "A",
+      records: [{ kind: "media", id: ID, payload: { id: ID, mime: "text/html" } }],
+    });
+    const path = `/sync/media/${ID}?variant=original`;
+    assert.equal((await h.call(path, { method: "PUT", body: "x" })).status, 200);
+    const get = await h.call(path);
+    assert.equal(get.headers.get("content-type"), "application/octet-stream");
+    assert.equal(get.headers.get("x-content-type-options"), "nosniff");
+    const json = await h.call("/sync/health");
+    assert.equal(json.headers.get("x-content-type-options"), "nosniff");
+  } finally {
+    await h.close();
+  }
+});
+
 test("P7.2.1 幂等重复上传不改动文件，超限 413、非法 id 400、无密钥 401", async () => {
   const h = await harness();
   try {

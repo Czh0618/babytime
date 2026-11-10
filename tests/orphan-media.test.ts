@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { orphanMediaIds, pruneOrphanMedia } from "../src/lib/storage.ts";
-import { referencedMediaIds } from "../src/domain/media-refs.ts";
+import {
+  referencedMediaIds,
+  unreferencedMediaIds,
+} from "../src/domain/media-refs.ts";
 import { emptyWorkspace } from "../src/domain/seed.ts";
 
 test("孤儿判定：去重、只删白名单外的 id", () => {
@@ -121,4 +124,32 @@ test("恢复备份后的孤儿原片回收：只删不再被引用的原片", as
   assert.equal(await pruneOrphanMedia(["keep-a", "keep-b"]), 0, "重复回收不会误删");
   assert.equal(await pruneOrphanMedia([]), 2, "白名单为空时全部清掉");
   assert.equal(rows.size, 0);
+});
+
+test("未归档素材：记录或待整理候选仍在用的、以及示例素材都不算", () => {
+  const asset = (id: string, demo = false) => ({
+    id, ...(demo ? { demo: true } : {}),
+    kind: "image" as const, name: `${id}.jpg`, mime: "image/jpeg", size: 10,
+    capturedAt: "2026-11-08T09:00", theme: "sand" as const,
+  });
+  const workspace = emptyWorkspace();
+  workspace.media = ["m1", "m2", "m3", "demo-1"].map((id) =>
+    asset(id, id.startsWith("demo")),
+  );
+  workspace.entries = [{
+    id: "e1", title: "记录", note: "", capturedAt: "2026-11-08T09:00",
+    tag: "日常片刻", milestone: false, favorite: false, mediaIds: ["m1"],
+  }];
+  workspace.candidates = [
+    {
+      id: "pending", mediaIds: ["m2"], title: "待整理", note: "",
+      capturedAt: "2026-11-08T09:00", origin: "upload", status: "pending",
+    },
+    {
+      id: "dismissed", mediaIds: ["m3"], title: "不收录", note: "",
+      capturedAt: "2026-11-08T09:00", origin: "upload", status: "dismissed",
+    },
+  ];
+  assert.deepEqual(unreferencedMediaIds(workspace), ["m3"]);
+  assert.deepEqual(unreferencedMediaIds(emptyWorkspace()), []);
 });

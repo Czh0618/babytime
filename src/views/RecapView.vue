@@ -20,6 +20,7 @@ import { suggestMonthlyRecap } from "../domain/recap-draft";
 import {
   RECAP_SYSTEM_PROMPT,
   buildRecapUserPrompt,
+  maskBabyName,
   parseRecapCopy,
 } from "../domain/ai";
 import { aiChat, aiErrorMessage } from "../lib/ai-service";
@@ -34,6 +35,8 @@ const props = withDefaults(
     error?: string;
     ageMonths?: number;
     aiReady?: boolean;
+    /** 发送记录标题前，把标题里出现的宝宝姓名替换成「宝宝」。 */
+    babyName?: string;
   }>(),
   { busy: false, error: "", aiReady: false },
 );
@@ -94,7 +97,8 @@ async function aiTitle() {
   try {
     const items = draft.entryIds
       .map((id) => props.entries.find((entry) => entry.id === id)?.title ?? "")
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((title) => maskBabyName(title, props.babyName));
     const raw = await aiChat(
       RECAP_SYSTEM_PROMPT,
       buildRecapUserPrompt({

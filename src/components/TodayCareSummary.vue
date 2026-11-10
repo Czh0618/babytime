@@ -2,12 +2,12 @@
 import { computed, onBeforeUnmount, ref } from "vue";
 import { Baby, Milk, Moon, Pill, Thermometer } from "@lucide/vue";
 import type { GrowthEntry } from "../types";
-import type { CareKind } from "../domain/care-types";
 import { localDate, formatTime } from "../domain/date";
 import {
   describeCare,
   hoursSince,
   lastMedicineEntry,
+  latestCareByKind,
   summarizeMilk,
   summarizeTemperature,
 } from "../domain/care-records";
@@ -78,23 +78,10 @@ function since(iso: string) {
   const h = Math.floor(minutes / 60), m = minutes % 60;
   return m ? `${h} 小时 ${m} 分前` : `${h} 小时前`;
 }
-const latest = computed(() => {
-  const result: Partial<Record<CareKind, GrowthEntry>> = {};
-  const now = Date.now();
-  [...props.entries]
-    .filter(
-      (entry) =>
-        entry.care &&
-        entry.capturedAt.slice(0, 10) === localDate() &&
-        new Date(entry.capturedAt).getTime() <= now,
-    )
-    .sort((a, b) => b.capturedAt.localeCompare(a.capturedAt))
-    .forEach((entry) => {
-      const kind = entry.care!.kind;
-      if (!result[kind]) result[kind] = entry;
-    });
-  return result;
-});
+/** 跨午夜仍显示昨晚的最近一条；「今天」只看当天会让夜奶显示成还未记录。 */
+const latest = computed(() =>
+  latestCareByKind(props.entries, new Date(now.value)),
+);
 </script>
 
 <template>

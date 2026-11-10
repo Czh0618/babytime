@@ -9,6 +9,8 @@ import {
   describeCare,
   hoursSince,
   lastMedicineEntry,
+  lastTemperatureOn,
+  latestCareByKind,
   summarizeTemperature,
 } from "../src/domain/care-records.ts";
 import { isWorkspace, migrateMediaIds, parseBackup } from "../src/domain/workspace-schema.ts";
@@ -198,4 +200,63 @@ test("备份校验接受体温与用药记录", () => {
   const broken = structuredClone(workspace);
   broken.entries[0]!.care!.site = "mouth" as never;
   assert.throws(() => parseBackup(JSON.stringify(broken)), /字段缺失|类型错误/);
+});
+
+test("距上次跨午夜：24 小时窗口取最近一条，未来记录不算", () => {
+  const entries = [
+    entry("2026-11-09T23:40", {
+      kind: "feeding",
+      amountMl: 90,
+      sourceText: "夜奶",
+    }),
+    entry("2026-11-10T00:20", {
+      kind: "feeding",
+      amountMl: 100,
+      sourceText: "凌晨",
+    }),
+    entry("2026-11-10T03:00", {
+      kind: "diaper",
+      diaper: "wet",
+      sourceText: "换尿布",
+    }),
+    entry("2026-11-10T09:00", {
+      kind: "feeding",
+      amountMl: 80,
+      sourceText: "还没到的时间",
+    }),
+  ];
+  const midnight = latestCareByKind(entries, new Date("2026-11-10T00:30"));
+  assert.equal(midnight.feeding?.capturedAt, "2026-11-10T00:20");
+  assert.equal(midnight.diaper, undefined);
+  const later = latestCareByKind(entries, new Date("2026-11-10T10:00"));
+  assert.equal(later.feeding?.capturedAt, "2026-11-10T09:00");
+  assert.equal(later.diaper?.capturedAt, "2026-11-10T03:00");
+});
+
+test("最近体温取最后一次测量，而不是当日最高", () => {
+  const entries = [
+    entry("2026-11-07T08:00", {
+      kind: "temperature",
+      temperatureC: 38.6,
+      sourceText: "早上",
+    }),
+    entry("2026-11-07T15:00", {
+      kind: "temperature",
+      temperatureC: 36.8,
+      sourceText: "下午",
+    }),
+    entry("2026-11-07T20:00", {
+      kind: "temperature",
+      temperatureC: 39.9,
+      sourceText: "还没到的时间",
+    }),
+  ];
+  assert.deepEqual(
+    lastTemperatureOn(entries, "2026-11-07", new Date("2026-11-07T16:00")),
+    { value: 36.8, at: "2026-11-07T15:00" },
+  );
+  assert.equal(
+    lastTemperatureOn(entries, "2026-11-08", new Date("2026-11-08T08:00")),
+    undefined,
+  );
 });

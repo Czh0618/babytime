@@ -16,6 +16,23 @@ export function referencedMediaIds(
   return [...ids].sort();
 }
 
+/**
+ * 没有任何成长记录或待整理候选引用的素材 id。
+ * 「这次不收录」、删除记录时保留原片等操作会让素材留在 media 列表里却
+ * 无处可见；家庭页用这个清单提供一次性清理。示例素材不参与。
+ */
+export function unreferencedMediaIds(workspace: Workspace): string[] {
+  const keep = new Set<string>();
+  for (const entry of workspace.entries)
+    for (const id of entry.mediaIds ?? []) keep.add(id);
+  for (const candidate of workspace.candidates)
+    if (candidate.status === "pending")
+      for (const id of candidate.mediaIds ?? []) keep.add(id);
+  return workspace.media
+    .filter((item) => !item.demo && !keep.has(item.id))
+    .map((item) => item.id);
+}
+
 /** P7.1：列表里第一张是封面；视频记录只有一个素材。 */
 export function coverMediaId(ids?: string[]): string | undefined {
   return ids?.[0];
