@@ -35,6 +35,23 @@ export type FeedingMethod =
   | "solid"
   | "pump";
 
+export type SleepState = "asleep" | "awake" | "duration";
+
+/**
+ * 睡眠类型。小睡与夜睡按入睡时刻自动推断（家长可以改）；
+ * 「补觉」是家长的主观判断，时间上推不出来，只能手动标。
+ * 睡眠深浅不属于这里：那要脑电、眼动、肌电才能判读，本机只有起止时刻。
+ */
+export type SleepKind = "nap" | "night" | "catch-up";
+
+export const SLEEP_KINDS: readonly SleepKind[] = ["nap", "night", "catch-up"];
+
+export const SLEEP_KIND_LABELS: Record<SleepKind, string> = {
+  nap: "小睡",
+  night: "夜睡",
+  "catch-up": "补觉",
+};
+
 export type BreastSide = "left" | "right" | "both";
 
 export const FEEDING_METHODS: readonly FeedingMethod[] = [
@@ -62,6 +79,8 @@ export interface CareFields {
   leftMinutes?: number;
   rightMinutes?: number;
   feedingMinutes?: number;
+  /** 睡眠类型；留空表示按入睡时刻自动推断。 */
+  sleepKind?: SleepKind;
   food?: string;
   reaction?: string;
   /** 体温，摄氏度。 */
@@ -109,7 +128,7 @@ export interface CareObservation extends CareFields {
   kind: CareKind;
   amountMl?: number;
   durationMinutes?: number;
-  sleepState?: "asleep" | "awake" | "duration";
+  sleepState?: SleepState;
   diaper?: "wet" | "dirty" | "mixed" | "changed";
   sourceText: string;
   /** 一次确认批次内的唯一标识，防止重复保存。 */
@@ -126,7 +145,7 @@ export interface VoiceDraft extends CareFields {
   timeHint?: string;
   amountMl?: number;
   durationMinutes?: number;
-  sleepState?: "asleep" | "awake" | "duration";
+  sleepState?: SleepState;
   diaper?: "wet" | "dirty" | "mixed" | "changed";
   sourceText: string;
   /** AI 输出里越界字段被丢弃时，提示家长核对。 */

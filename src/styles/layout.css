@@ -304,7 +304,8 @@
   .toast {
     display: none !important;
   }
-  .visit-sheet {
+  .visit-sheet,
+  .school-check-sheet {
     position: static !important;
     inset: auto !important;
     padding: 0 !important;
@@ -312,11 +313,14 @@
     background: #fff !important;
     color: #000;
   }
-  .visit-sheet .visit-actions {
+  .visit-sheet .visit-actions,
+  .school-check-sheet .sheet-actions {
     display: none !important;
   }
   .visit-sheet .visit-table th,
-  .visit-sheet .visit-table td {
+  .visit-sheet .visit-table td,
+  .school-check-sheet .sheet-table th,
+  .school-check-sheet .sheet-table td {
     border-color: #ccc;
   }
   @page {

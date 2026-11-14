@@ -99,6 +99,7 @@ test("跨午夜按自然日切分统计", () => {
     minutes: 480,
     ongoing: false,
     source: "paired",
+    kind: "night",
   };
   assert.deepEqual(splitSegmentByDay(segment), [
     { date: "2026-11-06", minutes: 90 },
@@ -124,6 +125,7 @@ test("空日与多段合计、最长一段", () => {
       minutes: 60,
       ongoing: false,
       source: "paired",
+      kind: "nap",
     },
     {
       start: "2026-11-06T13:00",
@@ -131,6 +133,7 @@ test("空日与多段合计、最长一段", () => {
       minutes: 120,
       ongoing: false,
       source: "paired",
+      kind: "nap",
     },
   ];
   assert.deepEqual(sleepSummaryForDay(segments, "2026-11-06"), {

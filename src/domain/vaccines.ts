@@ -184,6 +184,55 @@ export function nextDose(
   return undefined;
 }
 
+/**
+ * P8.6.1：到目标日期按国家免疫规划应种、但本机没有接种记录的剂次。
+ * 只看应种日期不晚于该日期的剂次；二选一还没选时两组都列出并标「待选」，
+ * 乙肝特殊程序沿用计划里的开关。各省增加的疫苗不在程序里，应用无从得知。
+ */
+export interface SchoolCheckItem {
+  code: string;
+  name: string;
+  dose: number;
+  dueDate: string;
+  pendingChoice?: boolean;
+}
+
+export function pendingVaccinesOn(
+  profile: BabyProfile,
+  plan: VaccinePlan,
+  records: VaccinationRecord[],
+  targetDate = localDate(),
+): SchoolCheckItem[] {
+  if (!profile.birthDate) return [];
+  const items: SchoolCheckItem[] = [];
+  for (const spec of visibleVaccines(profile, plan)) {
+    const pendingChoice = Boolean(
+      spec.group === "je"
+        ? !plan.choices.je
+        : spec.group === "hepatitis-a"
+          ? !plan.choices.hepa
+          : false,
+    );
+    for (const dose of doseDates(spec, profile.birthDate, plan.specialProgram)) {
+      if (dose.dueDate > targetDate) continue;
+      if (recordFor(records, spec.code, dose.dose)) continue;
+      items.push({
+        code: spec.code,
+        name: spec.name,
+        dose: dose.dose,
+        dueDate: dose.dueDate,
+        ...(pendingChoice ? { pendingChoice: true } : {}),
+      });
+    }
+  }
+  return items.sort(
+    (a, b) =>
+      a.dueDate.localeCompare(b.dueDate) ||
+      a.code.localeCompare(b.code) ||
+      a.dose - b.dose,
+  );
+}
+
 export function defaultVaccinePlan(): VaccinePlan {
   return { specialProgram: false, choices: {} };
 }

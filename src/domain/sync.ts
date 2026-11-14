@@ -3,6 +3,12 @@ import { activeProfileOf } from "./profiles.ts";
 import { removeEntry } from "./records.ts";
 import { normalizeMediaIds } from "./workspace-schema.ts";
 import { LIST_KINDS, lists, type ListKind, type SyncItem } from "./sync-meta.ts";
+import {
+  KEYED_PROFILE_FIELDS,
+  type KeyedRemovedField,
+  type KeyedValuesField,
+} from "./profile-keyed.ts";
+export { KEYED_PROFILE_FIELDS } from "./profile-keyed.ts";
 
 /** 线上格式，与 server/sync.ts 对应。 */
 export interface SyncRecord {
@@ -116,9 +122,46 @@ function migratePulledRecord(row: SyncRecord): SyncRecord {
   return { ...row, payload };
 }
 
+/** 按 key 合并其中一组记录，并处理取消标记；规则与旧的里程碑合并完全一致。 */
+function mergeKeyedValues(
+  mine: BabyProfile,
+  remote: BabyProfile,
+  base: BabyProfile,
+  field: KeyedValuesField,
+  removedField: KeyedRemovedField,
+): void {
+  const removed = new Set<string>([
+    ...(mine[removedField] ?? []),
+    ...(remote[removedField] ?? []),
+  ]);
+  const values: Record<string, unknown> = { ...(mine[field] ?? {}) };
+  const remoteValues = (remote[field] ?? {}) as Record<string, unknown>;
+  for (const [key, value] of Object.entries(remoteValues)) {
+    values[key] = value;
+    removed.delete(key);
+  }
+  for (const key of remote[removedField] ?? [])
+    if (!remoteValues[key]) {
+      delete values[key];
+      removed.add(key);
+    }
+  for (const key of mine[removedField] ?? [])
+    if (!remoteValues[key]) {
+      delete values[key];
+      removed.add(key);
+    }
+  for (const key of Object.keys(values)) removed.delete(key);
+  const target = base as unknown as Record<string, unknown>;
+  if (Object.keys(values).length || remote[field] || mine[field] || removed.size)
+    target[field] = values;
+  else delete target[field];
+  if (removed.size) target[removedField] = [...removed].sort();
+  else delete target[removedField];
+}
+
 /**
- * 合并宝宝档案：同 id 的 milestones 按键求并集，避免两台设备同时勾选/改资料时丢键；
- * 取消勾选靠 profiles 里的 deletedMilestones 标记传播（见 sync-meta.ts 的 stampChanges）。
+ * 合并宝宝档案：同 id 的三组按键记录求并集，避免两台设备同时勾选/改资料时丢键；
+ * 取消勾选靠 profiles 里的 deleted* 标记传播（见 sync-meta.ts 的 stampChanges）。
  * preferLocal 表示本机 profiles 有未推送修改：其它字段仍保留本机（后写者胜），
  * 但远端新加的宝宝会补进来，合并结果随后由本轮推送带上服务端。
  */
@@ -132,33 +175,9 @@ export function mergeProfiles(
   const merged = remote.map((item) => {
     const mine = localById.get(item.id);
     if (!mine) return item;
-    const removed = new Set([
-      ...(mine.deletedMilestones ?? []),
-      ...(item.deletedMilestones ?? []),
-    ]);
-    const values: Record<string, string> = { ...(mine.milestones ?? {}) };
-    const remoteValues = item.milestones ?? {};
-    for (const [key, value] of Object.entries(remoteValues)) {
-      values[key] = value;
-      removed.delete(key);
-    }
-    for (const key of item.deletedMilestones ?? [])
-      if (!remoteValues[key]) {
-        delete values[key];
-        removed.add(key);
-      }
-    for (const key of mine.deletedMilestones ?? [])
-      if (!remoteValues[key]) {
-        delete values[key];
-        removed.add(key);
-      }
-    for (const key of Object.keys(values)) removed.delete(key);
-    const base = preferLocal ? { ...mine } : { ...item };
-    if (Object.keys(values).length || item.milestones || mine.milestones || removed.size)
-      base.milestones = values;
-    else delete base.milestones;
-    if (removed.size) base.deletedMilestones = [...removed].sort();
-    else delete base.deletedMilestones;
+    const base: BabyProfile = preferLocal ? { ...mine } : { ...item };
+    for (const [field, removedField] of KEYED_PROFILE_FIELDS)
+      mergeKeyedValues(mine, item, base, field, removedField);
     return base;
   });
   if (preferLocal)

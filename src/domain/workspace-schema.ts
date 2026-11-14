@@ -59,13 +59,49 @@ const hasIds = (value: unknown) =>
     (item) => item && typeof item === "object" && typeof item.id === "string",
   );
 
-/** P6.5b：里程碑取消勾选的标记，可选且只接受短字符串数组。 */
-const validDeletedMilestones = (value: unknown): boolean =>
+/** P6.5b / P8：取消勾选的标记（里程碑、体检、发育观察），只接受短字符串数组。 */
+const validDeletedKeys = (value: unknown): boolean =>
   value === undefined ||
   (Array.isArray(value) &&
     value.every(
       (item) => typeof item === "string" && item.length > 0 && item.length <= 200,
     ));
+
+/** P8.1：体检完成记录是可选的按键映射，值只接受已核实的四个字段。 */
+function validHealthChecks(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.entries(value as Record<string, unknown>).every(
+    ([key, item]) => {
+      if (!key || key.length > 200 || !item || typeof item !== "object" || Array.isArray(item))
+        return false;
+      const record = item as Record<string, unknown>;
+      return (
+        typeof record.date === "string" && record.date.length <= 40 &&
+        (record.place === undefined ||
+          (typeof record.place === "string" && record.place.length <= 200)) &&
+        (record.note === undefined ||
+          (typeof record.note === "string" && record.note.length <= 500)) &&
+        (record.teethCount === undefined ||
+          (finiteNumber(record.teethCount) &&
+            record.teethCount >= 0 &&
+            record.teethCount <= 40 &&
+            Number.isInteger(record.teethCount)))
+      );
+    },
+  );
+}
+
+/** P8.4：发育观察与里程碑一样是「键 → 日期字符串」。 */
+function validKeyedDates(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.entries(value as Record<string, unknown>).every(
+    ([key, item]) =>
+      key.length > 0 && key.length <= 200 &&
+      typeof item === "string" && item.length <= 40,
+  );
+}
 
 function isBabyProfile(value: unknown): value is BabyProfile {
   if (!value || typeof value !== "object") return false;
@@ -78,7 +114,11 @@ function isBabyProfile(value: unknown): value is BabyProfile {
       profile.sex === "male" ||
       profile.sex === "female") &&
     (profile.dueDate === undefined || typeof profile.dueDate === "string") &&
-    validDeletedMilestones(profile.deletedMilestones)
+    validDeletedKeys(profile.deletedMilestones) &&
+    validHealthChecks(profile.healthChecks) &&
+    validDeletedKeys(profile.deletedHealthChecks) &&
+    validKeyedDates(profile.warningSigns) &&
+    validDeletedKeys(profile.deletedWarningSigns)
   );
 }
 
@@ -157,6 +197,7 @@ function validCare(value: unknown): boolean {
     optionalString(care.vaccineCode) &&
     optionalString(care.vaccineName) &&
     optionalEnum(care.site, ["ear", "forehead", "armpit", "rectal"]) &&
+    optionalEnum(care.sleepKind, ["nap", "night", "catch-up"]) &&
     optionalEnum(care.feedingMethod, [
       "breast",
       "bottle-formula",
@@ -229,7 +270,11 @@ function validBackupWorkspace(workspace: StoredWorkspace): boolean {
         optionalString(item.id) &&
         (item.vaccinePlan === undefined || validVaccinePlan(item.vaccinePlan)) &&
         (item.milestones === undefined || validMilestones(item.milestones)) &&
-        validDeletedMilestones(item.deletedMilestones)) &&
+        validDeletedKeys(item.deletedMilestones) &&
+        validHealthChecks(item.healthChecks) &&
+        validDeletedKeys(item.deletedHealthChecks) &&
+        validKeyedDates(item.warningSigns) &&
+        validDeletedKeys(item.deletedWarningSigns)) &&
       data.profiles.some((item) => item.id === data.activeProfileId)
     : isBabyProfile((data as LegacyLike).baby);
   return (
@@ -269,7 +314,8 @@ function validBackupWorkspace(workspace: StoredWorkspace): boolean {
         finiteNumber(item.dose) && item.dose > 0 &&
         typeof item.createdAt === "string" &&
         optionalString(item.name) && optionalString(item.clinic) &&
-        optionalString(item.lot) && optionalString(item.inputId))) &&
+        optionalString(item.lot) && optionalNumber(item.cost) &&
+        optionalString(item.inputId))) &&
     ((data as LegacyLike).vaccinePlan === undefined || validVaccinePlan((data as LegacyLike).vaccinePlan)) &&
     validTombstones(workspace.tombstones) &&
     (workspace.syncDirty === undefined ||

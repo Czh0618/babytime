@@ -12,6 +12,15 @@ import {
   vaccineTasks,
   type VaccineTask,
 } from "./vaccines.ts";
+import {
+  bmiFrom,
+  correctedBirthDate,
+  latestMeasurement,
+  monthsBetween,
+} from "./growth.ts";
+import { percentileBand } from "./growth-percentiles.ts";
+import { GROWTH_STANDARD_SOURCE } from "../data/growth-standard-2022.ts";
+import type { GrowthMetricId } from "../data/growth-standard-2022.ts";
 
 /** 就诊摘要：最近 N 天的聚合 + 体温 + 用药 + 疫苗状态，全部由本机数据算出。 */
 
@@ -35,6 +44,24 @@ export interface VisitSummaryData {
     upcoming: Array<{ name: string; dose: number; dueDate: string }>;
   };
   entryCount: number;
+  /** P8.7：最近一次生长测量与客观百分位区间；没填性别时只列数值。 */
+  growth?: VisitGrowthData;
+}
+
+export interface VisitGrowthBand {
+  label: string;
+  text: string;
+}
+
+export interface VisitGrowthData {
+  date: string;
+  weightKg?: number;
+  heightCm?: number;
+  headCm?: number;
+  /** 由同一条记录的体重与身高派生，不存储。 */
+  bmi?: number;
+  bands: VisitGrowthBand[];
+  note: string;
 }
 
 export function buildVisitSummary(
@@ -103,6 +130,56 @@ export function buildVisitSummary(
       dueDate: task.dueDate,
     }));
 
+  // P8.7：最近一次测量 + 客观百分位区间；BMI 由同一次的体重与身高派生。
+  const measurement = latestMeasurement(entries);
+  let growth: VisitGrowthData | undefined;
+  if (measurement) {
+    const bmi = bmiFrom(measurement.weightKg, measurement.heightCm);
+    const months = monthsBetween(
+      correctedBirthDate(baby).date,
+      measurement.date,
+    );
+    const values: Array<{
+      metric: GrowthMetricId;
+      label: string;
+      value?: number;
+    }> = [
+      { metric: "weightKg", label: "体重", value: measurement.weightKg },
+      { metric: "heightCm", label: "身高 / 身长", value: measurement.heightCm },
+      { metric: "headCm", label: "头围", value: measurement.headCm },
+      { metric: "bmi", label: "BMI", value: bmi },
+    ];
+    const bands = baby.sex
+      ? values.flatMap((item) => {
+          if (item.value === undefined) return [];
+          const text = percentileBand(
+            baby.sex,
+            item.metric,
+            months,
+            item.value,
+          );
+          return text ? [{ label: item.label, text }] : [];
+        })
+      : [];
+    growth = {
+      date: measurement.date,
+      ...(measurement.weightKg !== undefined
+        ? { weightKg: measurement.weightKg }
+        : {}),
+      ...(measurement.heightCm !== undefined
+        ? { heightCm: measurement.heightCm }
+        : {}),
+      ...(measurement.headCm !== undefined
+        ? { headCm: measurement.headCm }
+        : {}),
+      ...(bmi !== undefined ? { bmi } : {}),
+      bands,
+      note: baby.sex
+        ? `区间按同月龄同性别参考表（${GROWTH_STANDARD_SOURCE}），只描述数据，不做发育判断，具体请以医生为准。`
+        : "未填写性别，这里只列测量数值，不给参考区间；具体请以医生为准。",
+    };
+  }
+
   return {
     from: dates[0]!,
     to: today,
@@ -117,5 +194,6 @@ export function buildVisitSummary(
       upcoming,
     },
     entryCount: sorted.length,
+    ...(growth ? { growth } : {}),
   };
 }

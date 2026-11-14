@@ -660,6 +660,15 @@ function handleClip(event: "play" | "timeupdate") {
             <option value="duration">记录睡眠时长</option>
           </select></label
         >
+        <label v-if="draft.care.kind === 'sleep'" class="field"
+          ><span>睡眠类型</span
+          ><select v-model="draft.care.sleepKind">
+            <option :value="undefined">按入睡时间自动判断</option>
+            <option value="nap">小睡</option>
+            <option value="night">夜睡</option>
+            <option value="catch-up">补觉</option>
+          </select></label
+        >
         <label v-if="draft.care.kind === 'diaper'" class="field"
           ><span>尿布记录</span
           ><select v-model="draft.care.diaper">

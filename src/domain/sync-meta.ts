@@ -1,4 +1,5 @@
 import type { SyncKind, Tombstone, Workspace } from "../types.ts";
+import { KEYED_PROFILE_FIELDS } from "./profile-keyed.ts";
 
 /** 按条同步的列表；candidates 只是本机待整理队列，不参与同步。 */
 type ListKind = Exclude<SyncKind, "milestone">;
@@ -86,18 +87,23 @@ export function stampChanges(
   next.tombstones = tombstones.filter(
     (item) => !live.has(`${item.kind}:${item.id}`),
   );
-  // 里程碑取消勾选要随 profiles 一起同步：否则另一台设备合并时会把已取消的键并回来。
+  // P8：里程碑 / 体检完成 / 发育观察的取消勾选都要随 profiles 一起同步，
+  // 否则另一台设备合并时会把已取消的键并回来；三组规则完全一致。
   const previousProfiles = new Map(prev.profiles.map((item) => [item.id, item]));
   for (const profile of next.profiles) {
     const was = previousProfiles.get(profile.id);
-    const removed = new Set(profile.deletedMilestones ?? []);
-    for (const key of Object.keys(was?.milestones ?? {}))
-      if (!(profile.milestones ?? {})[key]) removed.add(key);
-    for (const key of Object.keys(profile.milestones ?? {})) removed.delete(key);
-    if (removed.size) profile.deletedMilestones = [...removed].sort();
-    else delete profile.deletedMilestones;
+    for (const [field, removedField] of KEYED_PROFILE_FIELDS) {
+      const removed = new Set(profile[removedField] ?? []);
+      const before = (was?.[field] ?? {}) as Record<string, unknown>;
+      const after = (profile[field] ?? {}) as Record<string, unknown>;
+      for (const key of Object.keys(before)) if (!after[key]) removed.add(key);
+      for (const key of Object.keys(after)) removed.delete(key);
+      const target = profile as unknown as Record<string, unknown>;
+      if (removed.size) target[removedField] = [...removed].sort();
+      else delete target[removedField];
+    }
   }
-  // 宝宝档案（含各自的疫苗计划与里程碑）整体同步，里程碑按 key 合并，其余后写者胜。
+  // 宝宝档案（含各自的计划与按键记录）整体同步，按 key 合并，其余后写者胜。
   if (!sameJson(prev.profiles, next.profiles)) {
     next.profilesUpdatedAt = now;
     dirty.add("profiles");

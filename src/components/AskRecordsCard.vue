@@ -19,6 +19,8 @@ const props = defineProps<{
   baby: BabyProfile;
   entries: GrowthEntry[];
   aiReady: boolean;
+  /** 折进健康页的统一卡片时隐藏自己的标题行。 */
+  embedded?: boolean;
 }>();
 
 const question = ref("");
@@ -68,7 +70,8 @@ async function ask() {
 
 <template>
   <section class="ask-card surface" aria-labelledby="ask-heading">
-    <h2 id="ask-heading" class="section-heading">问问记录</h2>
+    <h2 v-if="embedded" id="ask-heading" class="visually-hidden">问问记录</h2>
+    <h2 v-else id="ask-heading" class="section-heading">问问记录</h2>
     <p class="muted ask-hint">
       例如「最近睡得怎么样」「这周喂奶几次」。只发送按天汇总的数字，不保存对话，也不给医疗建议。
     </p>

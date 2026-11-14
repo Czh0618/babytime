@@ -1,5 +1,9 @@
 import type { CareObservation, VoiceDraft } from "./care-types.ts";
-import { SITE_LABELS, type CareKind } from "./care-types.ts";
+import {
+  SITE_LABELS,
+  SLEEP_KIND_LABELS,
+  type CareKind,
+} from "./care-types.ts";
 import type { GrowthEntry, Workspace } from "../types.ts";
 import { validateVoiceDraft, voiceDraftToEntry } from "./voice-parser.ts";
 import { validateEntry } from "./records.ts";
@@ -97,8 +101,10 @@ export function describeCare(care: CareObservation): string {
   }
   if (care.kind === "sleep") {
     if (care.sleepState === "awake") return "醒来了";
-    if (care.durationMinutes) return `${care.durationMinutes} 分钟`;
-    return care.sleepState === "asleep" ? "睡着了" : "已记录睡眠";
+    // 只有家长手动选过类型才写出来；自动推断的结果在睡眠段里，不回写记录。
+    const kind = care.sleepKind ? `${SLEEP_KIND_LABELS[care.sleepKind]} ` : "";
+    if (care.durationMinutes) return `${kind}${care.durationMinutes} 分钟`;
+    return care.sleepState === "asleep" ? `${kind}睡着了` : "已记录睡眠";
   }
   if (care.kind === "diaper")
     return (

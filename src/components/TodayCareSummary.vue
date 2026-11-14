@@ -15,12 +15,19 @@ import {
   deriveSleepSegments,
   formatMinutes,
   ongoingSleep,
+  sleepBreakdownForDay,
   sleepSummaryForDay,
 } from "../domain/sleep";
 import { nightSummary } from "../domain/stats";
 import { nextFeedingReference } from "../domain/feeding";
+import {
+  SLEEP_REFERENCE_DISCLAIMER,
+  SLEEP_REFERENCE_SOURCE,
+  sleepReferenceFor,
+  sleepReferenceText,
+} from "../data/sleep-reference";
 const props = withDefaults(
-  defineProps<{ entries: GrowthEntry[]; night?: boolean }>(),
+  defineProps<{ entries: GrowthEntry[]; night?: boolean; ageMonths?: number }>(),
   { night: false },
 );
 const emit = defineEmits<{ voice: []; open: [entry: GrowthEntry] }>();
@@ -39,9 +46,19 @@ const temperature = computed(() =>
 const lastMedicine = computed(() =>
   lastMedicineEntry(props.entries, new Date(now.value)),
 );
-const sleep = computed(() =>
-  sleepSummaryForDay(deriveSleepSegments(props.entries), localDate()),
-);
+const segments = computed(() => deriveSleepSegments(props.entries));
+const sleep = computed(() => sleepSummaryForDay(segments.value, localDate()));
+/** 按类型拆开今天的睡眠：只列记录里真有的类型，不判断够不够。 */
+const sleepParts = computed(() => {
+  const item = sleepBreakdownForDay(segments.value, localDate());
+  const parts: string[] = [];
+  if (item.napCount)
+    parts.push(`小睡 ${item.napCount} 次共 ${formatMinutes(item.napMinutes)}`);
+  if (item.nightMinutes) parts.push(`夜睡 ${formatMinutes(item.nightMinutes)}`);
+  if (item.catchUpMinutes)
+    parts.push(`补觉 ${formatMinutes(item.catchUpMinutes)}`);
+  return parts.join(" · ");
+});
 const ongoing = computed(() =>
   ongoingSleep(props.entries, new Date(now.value)),
 );
@@ -53,14 +70,14 @@ const ongoingDuration = computed(() =>
     : "",
 );
 const nightly = computed(() =>
-  nightSummary(
-    props.entries,
-    deriveSleepSegments(props.entries),
-    new Date(now.value),
-  ),
+  nightSummary(props.entries, segments.value, new Date(now.value)),
 );
 const reference = computed(() =>
   nextFeedingReference(props.entries, new Date(now.value)),
+);
+/** P8.3：只写参考范围，不与今日睡眠记录并列比较。 */
+const sleepReference = computed(() =>
+  props.ageMonths === undefined ? null : sleepReferenceFor(props.ageMonths),
 );
 const tick = () => (now.value = Date.now());
 const timer = setInterval(tick, 60_000);
@@ -151,12 +168,19 @@ const latest = computed(() =>
       今日睡眠：共 {{ formatMinutes(sleep.totalMinutes) }} · 最长一段
       {{ formatMinutes(sleep.longestMinutes) }}
     </p>
+    <p v-if="sleepParts" class="milk-summary">其中：{{ sleepParts }}</p>
     <p
       v-if="nightly.wakeCount || nightly.longestSleepMinutes"
       class="milk-summary"
     >
       昨夜：醒来 {{ nightly.wakeCount }} 次 · 最长连续睡眠
       {{ formatMinutes(nightly.longestSleepMinutes) }}
+    </p>
+    <p v-if="sleepReference" class="milk-summary sleep-reference-line">
+      {{ sleepReferenceText(sleepReference) }}。{{ SLEEP_REFERENCE_DISCLAIMER }}
+    </p>
+    <p v-if="sleepReference" class="milk-summary">
+      参考范围来源：{{ SLEEP_REFERENCE_SOURCE }}。
     </p>
   </section>
 </template>

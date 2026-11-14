@@ -87,6 +87,7 @@ import { exportLegacyRecords, exportRecap, exportRecords } from "./lib/export";
 import type {
   BabyProfile,
   Candidate,
+  HealthCheckRecord,
   EntryDraft,
   GrowthEntry,
   MediaAsset,
@@ -138,6 +139,8 @@ const {
   recaps,
   vaccinations,
   milestones,
+  healthChecks,
+  warningSigns,
   vaccinePlan,
   unreferencedMediaCount,
 } = model;
@@ -741,6 +744,15 @@ function toggleMilestoneKey(key: string) {
   void perform(() => model.saveMilestones(next));
 }
 
+/** P8：体检完成记录 / 发育观察都存进当前宝宝档案，走同一条同步与备份链路。 */
+function saveHealthChecks(records: Record<string, HealthCheckRecord>) {
+  void perform(() => model.saveHealthChecks(records));
+}
+
+function saveWarningSigns(signs: Record<string, string>) {
+  void perform(() => model.saveWarningSigns(signs));
+}
+
 const visitOpen = ref(false);
 const anniversaryDismissed = ref(false);
 const anniversary = computed(() =>
@@ -963,6 +975,7 @@ onBeforeUnmount(() => {
             <TodayCareSummary
               :entries="entries"
               :night="night"
+              :age-months="ageMonths"
               @voice="openVoice"
               @open="(entry) => (overlay = { kind: 'detail', id: entry.id })"
             />
@@ -1023,9 +1036,13 @@ onBeforeUnmount(() => {
           :records="vaccinations"
           :entries="entries"
           :milestones="milestones"
+          :health-checks="healthChecks"
+          :warning-signs="warningSigns"
           :busy="busy"
           :ai-ready="aiReady"
           @save-plan="saveVaccinePlan"
+          @save-health-checks="saveHealthChecks"
+          @save-warning-signs="saveWarningSigns"
           @add-record="addVaccination"
           @remove-record="removeVaccination"
           @calendar="downloadVaccineEvent"

@@ -769,6 +769,23 @@ onBeforeUnmount(() => {
           </select></label
         >
         <label v-if="draft.kind === 'sleep'" class="field"
+          ><span>睡眠类型</span
+          ><select
+            :value="draft.sleepKind || ''"
+            @change="
+              updateDraft(index, {
+                sleepKind: (($event.target as HTMLSelectElement).value ||
+                  undefined) as VoiceDraft['sleepKind'],
+              })
+            "
+          >
+            <option value="">按入睡时间自动判断</option>
+            <option value="nap">小睡</option>
+            <option value="night">夜睡</option>
+            <option value="catch-up">补觉</option>
+          </select></label
+        >
+        <label v-if="draft.kind === 'sleep'" class="field"
           ><span>睡了多久（分钟）<small>可选</small></span
           ><input
             :value="draft.durationMinutes ?? ''"

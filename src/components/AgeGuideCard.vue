@@ -8,6 +8,11 @@ import {
   type ParentActivity,
 } from "../data/age-guides";
 import { milestoneKey } from "../domain/milestones";
+import {
+  FEEDING_SOURCE,
+  FEEDING_SOURCE_URL,
+  feedingGuideFor,
+} from "../data/feeding-guide-cn";
 import type { BabyProfile } from "../types";
 
 const props = defineProps<{
@@ -35,6 +40,10 @@ const selectedGuide = computed<AgeGuide>(() =>
       automatic.value.guide),
 );
 const isManual = computed(() => selectedId.value !== "auto");
+/** P8.5.1：喂养准则按宝宝真实月龄选组，不随手动查看的参考月龄切换。 */
+const feedingGuide = computed(() =>
+  automatic.value.age.valid ? feedingGuideFor(automatic.value.age.months) : undefined,
+);
 
 function resetToCurrent() {
   selectedId.value = "auto";
@@ -177,6 +186,25 @@ function resetToCurrent() {
             </button>
           </div>
         </article>
+      </div>
+
+      <div v-if="feedingGuide" class="feeding-guide-block">
+        <div class="block-title">
+          <BookOpen :size="17" aria-hidden="true" />
+          <h3>喂养准则 · {{ feedingGuide.label }}</h3>
+        </div>
+        <ol class="feeding-guide-list">
+          <li v-for="item in feedingGuide.items" :key="item">{{ item }}</li>
+        </ol>
+        <p class="feeding-guide-note">
+          按宝宝当前完整月龄显示，不随上面的参考月龄切换；满 6 月龄起添加辅食，
+          具体请以医生为准。这里只列准则标题，不写用量。
+        </p>
+        <p class="feeding-guide-note">
+          来源：<a :href="FEEDING_SOURCE_URL" target="_blank" rel="noreferrer">{{
+            FEEDING_SOURCE
+          }}</a>
+        </p>
       </div>
 
       <p class="guide-source">
@@ -446,5 +474,31 @@ function resetToCurrent() {
   .activity-footer .button {
     width: 100%;
   }
+}
+.feeding-guide-block {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--tint);
+  min-width: 0;
+}
+.feeding-guide-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.feeding-guide-list li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.feeding-guide-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
 }
 </style>

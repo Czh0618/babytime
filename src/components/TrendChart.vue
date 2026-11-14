@@ -11,6 +11,13 @@ import {
 } from "../domain/stats";
 import { deriveSleepSegments } from "../domain/sleep";
 import {
+  SLEEP_REFERENCE_BAND_HINT,
+  SLEEP_REFERENCE_DISCLAIMER,
+  SLEEP_REFERENCE_SOURCE,
+  sleepReferenceFor,
+  sleepReferenceText,
+} from "../data/sleep-reference";
+import {
   TREND_SYSTEM_PROMPT,
   buildStatsDigest,
   guardMedicalOutput,
@@ -58,10 +65,15 @@ const stats = computed(() => aggregateByDay(props.entries, range.value));
 const values = computed(() =>
   stats.value.map((day) => metricValue(day, metric.value)),
 );
+/** P8.3：只按完整月龄取档，6 岁起不显示；参考带不参与任何数值判断。 */
+const sleepReference = computed(() =>
+  props.ageMonths === undefined ? null : sleepReferenceFor(props.ageMonths),
+);
 const max = computed(() =>
   Math.max(
     1,
     ...values.value.filter((_, index) => stats.value[index]!.hasData),
+    metric.value === "sleep" ? (sleepReference.value?.maxHours ?? 0) : 0,
   ),
 );
 const currentMetric = computed(
@@ -89,6 +101,24 @@ const bars = computed(() => {
       y: BASELINE - height,
     };
   });
+});
+
+/**
+ * P8.3.2：睡眠指标叠加 24 小时总睡眠参考带。纵轴与柱子共用刻度，
+ * 右边界取「倒数第二根柱子」的末端——最后一根是今天，还没过完不参与对照。
+ */
+const referenceBand = computed(() => {
+  const ref = sleepReference.value;
+  if (metric.value !== "sleep" || !ref || bars.value.length < 2) return null;
+  const lastComplete = bars.value[bars.value.length - 2]!;
+  const yTop = BASELINE - (ref.maxHours / max.value) * 96;
+  const yBottom = BASELINE - (ref.minHours / max.value) * 96;
+  return {
+    x: 0,
+    y: yTop,
+    width: Math.max(0, lastComplete.x + lastComplete.width),
+    height: Math.max(0, yBottom - yTop),
+  };
 });
 
 const selectedDay = computed(() => {
@@ -172,6 +202,15 @@ function labelFor(date: string, index: number): string {
           :y2="BASELINE"
           class="trend-axis"
         />
+        <rect
+          v-if="referenceBand"
+          :x="referenceBand.x"
+          :y="referenceBand.y"
+          :width="referenceBand.width"
+          :height="referenceBand.height"
+          class="trend-reference"
+          aria-hidden="true"
+        />
         <template v-for="bar in bars" :key="bar.day">
           <rect
             v-if="bar.height > 0"
@@ -195,6 +234,14 @@ function labelFor(date: string, index: number): string {
     </p>
     <p class="trend-note muted">
       单位：{{ currentMetric.unit }} · 点击柱子可看单日汇总，无记录的日子留空。
+    </p>
+    <p v-if="referenceBand && sleepReference" class="trend-note sleep-reference-note">
+      {{ sleepReferenceText(sleepReference) }}，图中阴影为参考范围。{{
+        SLEEP_REFERENCE_BAND_HINT
+      }}
+    </p>
+    <p v-if="referenceBand" class="trend-note muted">
+      {{ SLEEP_REFERENCE_SOURCE }}。{{ SLEEP_REFERENCE_DISCLAIMER }}
     </p>
     <div class="trend-ai">
       <button
@@ -274,6 +321,14 @@ function labelFor(date: string, index: number): string {
 .trend-axis {
   stroke: var(--line);
   stroke-width: 1;
+}
+.trend-reference {
+  fill: var(--accent);
+  opacity: 0.12;
+  pointer-events: none;
+}
+.sleep-reference-note {
+  margin-top: 6px;
 }
 .trend-bar {
   fill: var(--accent);

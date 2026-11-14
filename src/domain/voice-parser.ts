@@ -590,6 +590,7 @@ export function voiceDraftToEntry(
       leftMinutes: draft.leftMinutes,
       rightMinutes: draft.rightMinutes,
       feedingMinutes: draft.feedingMinutes,
+      sleepKind: draft.sleepKind,
       food: draft.food,
       reaction: draft.reaction,
       temperatureC: draft.temperatureC,

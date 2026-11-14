@@ -54,6 +54,16 @@ export function toLegacyBackup(backup: WorkspaceBackup): Record<string, unknown>
       item.mediaId = ids?.[0] ?? "";
       delete item.mediaIds;
     }
+  // P8 的档案字段只在新版存在：回滚用的版本 1 备份里剔除，旧版前端拿到的是旧结构。
+  if (Array.isArray(workspace.profiles))
+    for (const item of workspace.profiles as Array<Record<string, unknown>>)
+      for (const key of [
+        "healthChecks",
+        "deletedHealthChecks",
+        "warningSigns",
+        "deletedWarningSigns",
+      ])
+        delete item[key];
   return { backupVersion: 1, workspace, mediaFiles: backup.mediaFiles };
 }
 

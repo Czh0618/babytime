@@ -11,10 +11,10 @@ import {
   SHOWN_PERCENTILES,
 } from "../src/domain/growth-percentiles.ts";
 
-test("静态表来自标准原文：6 张表、月龄连续、每行 7 个单调百分位", () => {
+test("静态表来自标准原文：8 张表（含 P8.2 的 BMI）、月龄连续、每行 7 个单调百分位", () => {
   assert.deepEqual(GROWTH_PERCENTILES, [3, 10, 25, 50, 75, 90, 97]);
   for (const sex of ["male", "female"] as const) {
-    for (const metric of ["weightKg", "heightCm", "headCm"] as const) {
+    for (const metric of ["weightKg", "heightCm", "headCm", "bmi"] as const) {
       const rows = GROWTH_STANDARD_2022[sex][metric];
       const expected = metric === "headCm" ? 29 : 44;
       assert.equal(rows.length, expected, `${sex}/${metric} 行数`);

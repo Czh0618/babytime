@@ -1,4 +1,5 @@
 import type { GrowthEntry } from "../types.ts";
+import type { SleepKind } from "./care-types.ts";
 import { localDate, localDateTime } from "./date.ts";
 
 /**
@@ -14,6 +15,22 @@ export interface SleepSegment {
   minutes: number | null;
   ongoing: boolean;
   source: "paired" | "duration" | "ongoing";
+  /** 睡眠类型：家长选过用手动值，否则按入睡时刻推断。 */
+  kind: SleepKind;
+}
+
+/**
+ * 按入睡时刻推断小睡还是夜睡：19:00 至次日 06:00 记夜睡，其余记小睡。
+ * 只做这一个粗分，不碰深浅睡眠——那需要脑电、眼动、肌电才能判读。
+ */
+export function inferSleepKind(start: string): SleepKind {
+  const hour = Number(start.slice(11, 13));
+  if (!Number.isFinite(hour)) return "nap";
+  return hour >= 19 || hour < 6 ? "night" : "nap";
+}
+
+function kindOf(entry: GrowthEntry): SleepKind {
+  return entry.care?.sleepKind ?? inferSleepKind(entry.capturedAt);
 }
 
 export interface SleepDaySummary {
@@ -33,7 +50,7 @@ export function deriveSleepSegments(entries: GrowthEntry[]): SleepSegment[] {
     .filter((entry) => entry.care?.kind === "sleep" && entry.capturedAt)
     .sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
   const segments: SleepSegment[] = [];
-  let pendingStart: string | null = null;
+  let pending: { at: string; kind: SleepKind } | null = null;
   for (const entry of events) {
     const care = entry.care!;
     if (care.durationMinutes && care.durationMinutes > 0) {
@@ -43,36 +60,39 @@ export function deriveSleepSegments(entries: GrowthEntry[]): SleepSegment[] {
         minutes: care.durationMinutes,
         ongoing: false,
         source: "duration",
+        kind: kindOf(entry),
       });
-      pendingStart = null;
+      pending = null;
       continue;
     }
     if (care.sleepState === "awake") {
-      if (pendingStart) {
+      if (pending) {
         const minutes =
-          (Date.parse(entry.capturedAt) - Date.parse(pendingStart)) / 60_000;
+          (Date.parse(entry.capturedAt) - Date.parse(pending.at)) / 60_000;
         if (minutes > 0)
           segments.push({
-            start: pendingStart,
+            start: pending.at,
             end: entry.capturedAt,
             minutes,
             ongoing: false,
             source: "paired",
+            kind: pending.kind,
           });
-        pendingStart = null;
+        pending = null;
       }
       continue;
     }
     // asleep 或未标注状态都视为「睡着了」；连续两条只保留后一条。
-    pendingStart = entry.capturedAt;
+    pending = { at: entry.capturedAt, kind: kindOf(entry) };
   }
-  if (pendingStart)
+  if (pending)
     segments.push({
-      start: pendingStart,
+      start: pending.at,
       end: null,
       minutes: null,
       ongoing: true,
       source: "ongoing",
+      kind: pending.kind,
     });
   return segments;
 }
@@ -147,6 +167,43 @@ export function sleepSummaryForDay(
     longestMinutes: parts.length ? Math.max(...parts) : 0,
     segmentCount: parts.length,
   };
+}
+
+export interface SleepDayBreakdown {
+  /** 当天小睡段数与总时长。 */
+  napCount: number;
+  napMinutes: number;
+  nightMinutes: number;
+  catchUpMinutes: number;
+}
+
+/**
+ * 按自然日切分后，按睡眠类型分别累加；进行中的段不参与。
+ * 只汇总时长和次数，不判断睡得够不够——那是医生的事。
+ */
+export function sleepBreakdownForDay(
+  segments: SleepSegment[],
+  date: string,
+): SleepDayBreakdown {
+  const result: SleepDayBreakdown = {
+    napCount: 0,
+    napMinutes: 0,
+    nightMinutes: 0,
+    catchUpMinutes: 0,
+  };
+  for (const segment of segments) {
+    for (const part of splitSegmentByDay(segment)) {
+      if (part.date !== date || part.minutes <= 0) continue;
+      if (segment.kind === "night") result.nightMinutes += part.minutes;
+      else if (segment.kind === "catch-up")
+        result.catchUpMinutes += part.minutes;
+      else {
+        result.napCount++;
+        result.napMinutes += part.minutes;
+      }
+    }
+  }
+  return result;
 }
 
 export function formatMinutes(minutes: number): string {

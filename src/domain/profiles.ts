@@ -89,7 +89,19 @@ export function legacyWorkspaceOf(workspace: Workspace): LegacyWorkspace {
   const id = profile.id;
   const mine = <T extends { babyId?: string }>(items: T[]) =>
     items.filter((item) => !item.babyId || item.babyId === id);
-  const { id: _id, vaccinePlan, milestones, ...baby } = profile;
+  // P8 的体检完成记录、发育观察与各自的取消标记是新版才有的字段，
+  // 导出 P4 旧格式时一并剔除，避免旧版前端看到不认识的结构。
+  const {
+    id: _id,
+    vaccinePlan,
+    milestones,
+    deletedMilestones: _deletedMilestones,
+    healthChecks: _healthChecks,
+    deletedHealthChecks: _deletedHealthChecks,
+    warningSigns: _warningSigns,
+    deletedWarningSigns: _deletedWarningSigns,
+    ...baby
+  } = profile;
   return {
     schemaVersion: 1,
     baby,

@@ -9,6 +9,7 @@ import type {
   RecapDraft,
   Workspace,
   MediaSlotInput,
+  HealthCheckRecord,
 } from "../types";
 import { MAX_ENTRY_MEDIA } from "../types";
 import { localDateTime } from "../domain/date";
@@ -171,6 +172,9 @@ export function useWorkspace() {
   const recaps = computed(() => forActive(workspace.value.recaps));
   const vaccinations = computed(() => forActive(workspace.value.vaccinations ?? []));
   const milestones = computed(() => activeProfile.value.milestones ?? {});
+  /** P8：体检完成记录与发育观察都放在当前宝宝档案里，随 profiles 同步。 */
+  const healthChecks = computed(() => activeProfile.value.healthChecks ?? {});
+  const warningSigns = computed(() => activeProfile.value.warningSigns ?? {});
   const vaccinePlan = computed(() => activeProfile.value.vaccinePlan ?? defaultVaccinePlan());
 
   const pending = computed(() =>
@@ -703,10 +707,29 @@ export function useWorkspace() {
   }
 
   async function saveMilestones(milestones: Record<string, string>) {
+    await updateActiveProfile((profile) => {
+      profile.milestones = { ...milestones };
+    });
+  }
+
+  /** 三组按键记录共用同一段写入：只改当前宝宝档案，其它字段后写者胜。 */
+  async function updateActiveProfile(change: (profile: BabyProfile) => void) {
     await update((next) => {
       const profile = next.profiles.find((item) => item.id === next.activeProfileId);
       if (!profile) throw new Error("当前宝宝档案不在了，请刷新后再试。");
-      profile.milestones = { ...milestones };
+      change(profile);
+    });
+  }
+
+  async function saveHealthChecks(records: Record<string, HealthCheckRecord>) {
+    await updateActiveProfile((profile) => {
+      profile.healthChecks = { ...records };
+    });
+  }
+
+  async function saveWarningSigns(signs: Record<string, string>) {
+    await updateActiveProfile((profile) => {
+      profile.warningSigns = { ...signs };
     });
   }
 
@@ -931,6 +954,8 @@ export function useWorkspace() {
     removeVaccination,
     saveVaccinePlan,
     saveMilestones,
+    saveHealthChecks,
+    saveWarningSigns,
     saveProfile,
     clearDemo,
     loadDemo,
@@ -948,6 +973,8 @@ export function useWorkspace() {
     recaps,
     vaccinations,
     milestones,
+    healthChecks,
+    warningSigns,
     vaccinePlan,
     addProfile,
     switchProfile,

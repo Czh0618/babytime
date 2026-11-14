@@ -7,6 +7,16 @@ export type MediaTheme = "sand" | "sage" | "rose";
 /** P7.1：一条记录最多 9 张照片，第一张是封面；含视频时只能是 1 个素材。 */
 export const MAX_ENTRY_MEDIA = 9;
 
+/** P8.1：一次儿保体检的完成记录，全部字段可选（日期必填）。 */
+export interface HealthCheckRecord {
+  /** 实际体检日期，YYYY-MM-DD。 */
+  date: string;
+  place?: string;
+  note?: string;
+  /** 6 / 8 月龄按实际出牙数填写（规范附件 2 填表说明）。 */
+  teethCount?: number;
+}
+
 export interface BabyProfile {
   /** 稳定标识（P5）；旧数据迁移时补上。 */
   id?: string;
@@ -21,6 +31,12 @@ export interface BabyProfile {
   milestones?: Record<string, string>;
   /** 已取消勾选的里程碑键，随 profiles 一起同步；旧档案没有这个字段。 */
   deletedMilestones?: string[];
+  /** P8.1：体检完成记录，键为节点 id；结构与里程碑一样按 key 合并同步。 */
+  healthChecks?: Record<string, HealthCheckRecord>;
+  deletedHealthChecks?: string[];
+  /** P8.4：发育观察勾选，键为「检查点:序号」或固定倒退项，值为日期。 */
+  warningSigns?: Record<string, string>;
+  deletedWarningSigns?: string[];
 }
 
 export interface DemoProfileRestorePoint {
@@ -137,6 +153,8 @@ export interface VaccinationRecord extends SyncMeta {
   date: string;
   clinic?: string;
   lot?: string;
+  /** 实际花费（元），可空；价格为门诊公示，应用不内置。 */
+  cost?: number;
   createdAt: string;
   /** 语音批次去重用。 */
   inputId?: string;

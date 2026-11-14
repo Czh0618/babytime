@@ -64,6 +64,41 @@ const emit = defineEmits<{ close: []; print: []; csv: [] }>();
         </dl>
       </section>
 
+      <section v-if="summary.growth" class="visit-block">
+        <h3>最近一次生长测量</h3>
+        <dl class="visit-grid">
+          <div>
+            <dt>测量时间</dt>
+            <dd>
+              {{ formatDate(summary.growth.date) }}
+              {{ formatTime(summary.growth.date) }}
+            </dd>
+          </div>
+          <div v-if="summary.growth.weightKg !== undefined">
+            <dt>体重</dt>
+            <dd>{{ summary.growth.weightKg }} kg</dd>
+          </div>
+          <div v-if="summary.growth.heightCm !== undefined">
+            <dt>身高 / 身长</dt>
+            <dd>{{ summary.growth.heightCm }} cm</dd>
+          </div>
+          <div v-if="summary.growth.headCm !== undefined">
+            <dt>头围</dt>
+            <dd>{{ summary.growth.headCm }} cm</dd>
+          </div>
+          <div v-if="summary.growth.bmi !== undefined">
+            <dt>BMI（由同一次体重与身高派生）</dt>
+            <dd>{{ summary.growth.bmi }} kg/m²</dd>
+          </div>
+        </dl>
+        <ul v-if="summary.growth.bands.length" class="visit-band-list">
+          <li v-for="band in summary.growth.bands" :key="band.label">
+            {{ band.label }}：{{ band.text }}
+          </li>
+        </ul>
+        <p class="muted">{{ summary.growth.note }}</p>
+      </section>
+
       <section class="visit-block">
         <h3>体温记录</h3>
         <p v-if="!summary.temperature.length" class="muted">
@@ -196,6 +231,14 @@ const emit = defineEmits<{ close: []; print: []; csv: [] }>();
 .visit-grid small {
   color: var(--muted);
   font-size: 12px;
+}
+.visit-band-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
 }
 .visit-table {
   width: 100%;
